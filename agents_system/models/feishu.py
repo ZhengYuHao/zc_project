@@ -17,6 +17,12 @@ from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+# 添加调试信息，检查settings是否正确加载
+logger.info(f"FEISHU_APP_ID from settings: {settings.FEISHU_APP_ID}")
+logger.info(f"FEISHU_APP_SECRET from settings: {settings.FEISHU_APP_SECRET}")
+logger.info(f"FEISHU_VERIFY_TOKEN from settings: {settings.FEISHU_VERIFY_TOKEN}")
+logger.info(f"FEISHU_ENCRYPT_KEY from settings: {settings.FEISHU_ENCRYPT_KEY}")
+
 
 class DocumentVersionError(Exception):
     """文档版本冲突异常"""
@@ -34,7 +40,6 @@ class FeishuClient:
         self.client = httpx.AsyncClient()
         self.tenant_access_token = None
         self.token_expire_time = 0
-        logger.info("Initialized FeishuClient")
     
     async def get_tenant_access_token(self) -> str:
         """
@@ -55,23 +60,22 @@ class FeishuClient:
         }
         
         try:
-            logger.info("Getting tenant_access_token from Feishu")
             response = await self.client.post(url, headers=headers, json=payload)
             response.raise_for_status()
             
             result = response.json()
+            
             if result.get("code") != 0:
                 raise Exception(f"Failed to get tenant_access_token: {result}")
             
             self.tenant_access_token = result["tenant_access_token"]
             self.token_expire_time = time.time() + result["expire"] - 60  # 提前60秒过期
-            logger.info("Successfully got tenant_access_token")
             
             return self.tenant_access_token
         except Exception as e:
             logger.error(f"Error getting tenant_access_token: {str(e)}")
             raise
-    
+        
     async def read_document(self, document_id: str) -> Dict[str, Any]:
         """
         读取飞书文档内容
@@ -109,7 +113,6 @@ class FeishuClient:
                 "document_id": document_id
             }
             
-            logger.info(f"Successfully read document {document_id}")
             return result
         except Exception as e:
             logger.error(f"Error reading document {document_id}: {str(e)}")
@@ -158,7 +161,6 @@ class FeishuClient:
                     raise DocumentVersionError(f"Document version conflict when writing: {result}")
                 raise Exception(f"Failed to write document: {result}")
             
-            logger.info(f"Successfully wrote to document {document_id}")
             return True
         except DocumentVersionError:
             raise
@@ -197,7 +199,6 @@ class FeishuClient:
             if result.get("code") != 0:
                 raise Exception(f"Failed to reply message: {result}")
             
-            logger.info(f"Successfully replied to message {message_id}")
             return True
         except Exception as e:
             logger.error(f"Error replying to message {message_id}: {str(e)}")

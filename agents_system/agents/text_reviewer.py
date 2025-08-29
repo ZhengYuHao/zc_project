@@ -133,16 +133,17 @@ class TextReviewerAgent(BaseAgent):
                 # 读取飞书文档内容
                 doc_data = await self.feishu_client.read_document(document_id)
                 doc_revision = doc_data.get("revision", 0)
+                doc_content = doc_data.get("content", {})
                 
                 self.logger.info(f"Document {document_id} revision: {doc_revision}")
                 
-                # 这里需要根据实际的文档结构解析内容
-                # 简化处理，假设我们能从文档中提取出文本内容
-                # 实际实现时需要根据飞书文档API的具体返回格式进行解析
+                # 从文档内容中提取文本
+                original_text = self._extract_text_from_document(doc_content)
                 
-                # 示例：提取文本内容并进行审稿
-                # 注意：这需要根据实际的飞书文档结构进行调整
-                original_text = "示例文本内容"  # 从doc_content中提取
+                # 如果没有提取到文本，则使用示例文本
+                if not original_text:
+                    original_text = "示例文本内容"
+                    self.logger.warning(f"No text extracted from document {document_id}, using sample text")
                 
                 # 创建审稿请求
                 review_request = TextReviewRequest(
@@ -199,6 +200,76 @@ class TextReviewerAgent(BaseAgent):
                     "document_id": document_id,
                     "error": str(e)
                 }
+    
+    def _extract_text_from_document(self, doc_content: dict) -> str:
+        """
+        从飞书文档内容中提取文本
+        
+        Args:
+            doc_content: 飞书文档内容
+            
+        Returns:
+            提取的文本内容
+        """
+        # 飞书文档内容结构解析
+        # 根据飞书文档API，内容在blocks字段中
+        blocks = doc_content.get("items", [])  # 使用items而不是blocks
+        
+        if not blocks:
+            # 如果items为空，尝试直接从content中获取blocks
+            blocks = doc_content.get("blocks", [])
+            
+        if not blocks:
+            return ""
+        
+        text_parts = []
+        
+        # 遍历所有块，提取文本内容
+        for block in blocks:
+            # 根据飞书文档API结构，处理不同类型的块
+            block_type = block.get("block_type")
+            
+            # 处理页面块
+            if "page" in block:
+                elements = block["page"].get("elements", [])
+                for element in elements:
+                    if "text_run" in element:
+                        content = element["text_run"].get("content", "")
+                        if content:
+                            text_parts.append(content)
+            
+            # 处理文本块
+            elif "text" in block:
+                elements = block["text"].get("elements", [])
+                for element in elements:
+                    if "text_run" in element:
+                        content = element["text_run"].get("content", "")
+                        if content:
+                            text_parts.append(content)
+            
+            # 处理段落块
+            elif block_type == 2:  # paragraph
+                children = block.get("children", [])
+                for child in children:
+                    if "text_run" in child:
+                        content = child["text_run"].get("content", "")
+                        if content:
+                            text_parts.append(content)
+            
+            # 处理标题块
+            elif block_type in [1, 3, 4, 5, 6, 7, 8, 9]:  # heading blocks
+                if "heading" + str(block_type) in block:
+                    heading = block["heading" + str(block_type)]
+                    if "elements" in heading:
+                        elements = heading["elements"]
+                        for element in elements:
+                            if "text_run" in element:
+                                content = element["text_run"].get("content", "")
+                                if content:
+                                    text_parts.append(content)
+        
+        # 将所有文本部分连接起来
+        return "\n".join(text_parts)
     
     async def process_feishu_message(self, request: FeishuMessageRequest) -> dict:
         """

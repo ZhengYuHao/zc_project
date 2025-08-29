@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     
     # Qwen大模型配置
     QWEN_API_KEY: Optional[str] = Field(default=None, alias="QWEN_API_KEY")
-    QWEN_MODEL_NAME: str = Field(default="qwen-turbo", alias="QWEN_MODEL_NAME")
+    QWEN_MODEL_NAME: str = Field(default="qwen-plus", alias="QWEN_MODEL_NAME")
     QWEN_API_BASE: str = Field(default="https://dashscope.aliyuncs.com/api/v1", alias="QWEN_API_BASE")
     
     # 日志配置
@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     FEISHU_ENCRYPT_KEY: Optional[str] = Field(default=None, alias="FEISHU_ENCRYPT_KEY")
     
     model_config = {
-        "env_file": ".env",
+        "env_file": os.path.join(os.path.dirname(__file__), "..", ".env"),
         "env_file_encoding": "utf-8"
     }
 
