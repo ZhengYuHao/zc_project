@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from config.settings import settings
 from core.registry import registry
 from agents.text_reviewer import TextReviewerAgent
+from core.feishu_callback import router as feishu_router
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -35,6 +36,8 @@ registry.register("text_reviewer", TextReviewerAgent)
 
 # 将智能体路由添加到应用
 app.include_router(text_reviewer.router)
+# 添加飞书回调路由
+app.include_router(feishu_router)
 
 # 添加根路径
 @app.get("/")

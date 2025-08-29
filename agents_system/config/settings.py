@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = Field(default="INFO", alias="LOG_LEVEL")
     LOG_FILE: Optional[str] = Field(default="logs/agents_system.log", alias="LOG_FILE")
     
+    # 飞书配置
+    FEISHU_APP_ID: Optional[str] = Field(default=None, alias="FEISHU_APP_ID")
+    FEISHU_APP_SECRET: Optional[str] = Field(default=None, alias="FEISHU_APP_SECRET")
+    FEISHU_VERIFY_TOKEN: Optional[str] = Field(default=None, alias="FEISHU_VERIFY_TOKEN")
+    FEISHU_ENCRYPT_KEY: Optional[str] = Field(default=None, alias="FEISHU_ENCRYPT_KEY")
+    
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8"
