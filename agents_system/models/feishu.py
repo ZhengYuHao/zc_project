@@ -3,9 +3,17 @@ import hashlib
 import base64
 import hmac
 import time
+import sys
+import os
 from typing import Optional, Dict, Any
-from ..config.settings import settings
-from ..utils.logger import get_logger
+
+# 添加项目根目录到Python路径
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+from config.settings import settings
+from utils.logger import get_logger
 
 logger = get_logger(__name__)
 

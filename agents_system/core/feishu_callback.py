@@ -1,12 +1,18 @@
 from fastapi import APIRouter, Request, Header, HTTPException, Response
-from typing import Dict, Any, Optional
+import sys
+import os
 import json
 import asyncio
+from typing import Dict, Any, Optional
 from collections import defaultdict
-from ..models.feishu import get_feishu_client
-from ..agents.text_reviewer import TextReviewerAgent
-from ..utils.logger import get_logger
-from ..config.settings import settings
+
+# 添加项目根目录到Python路径
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from models.feishu import get_feishu_client
+from agents.text_reviewer import TextReviewerAgent
+from utils.logger import get_logger
+from config.settings import settings
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/feishu")
@@ -36,8 +42,7 @@ async def feishu_callback(
     request: Request,
     request_timestamp: str = Header(None, alias="X-Li-TimeStamp"),
     request_nonce: str = Header(None, alias="X-Li-Nonce"),
-    request_signature: str = Header(None, alias="X-Li-Signature"),
-    request_body: Dict[Any, Any] = None
+    request_signature: str = Header(None, alias="X-Li-Signature")
 ):
     """
     飞书事件回调处理接口
@@ -47,7 +52,6 @@ async def feishu_callback(
         request_timestamp: 请求时间戳
         request_nonce: 请求随机数
         request_signature: 请求签名
-        request_body: 请求体
         
     Returns:
         回调处理结果
