@@ -143,7 +143,13 @@ class FeishuClient:
                 logger.warning(f"Document version conflict: expected {expected_revision}, got {current_revision}")
                 raise DocumentVersionError(f"Document version conflict: expected {expected_revision}, got {current_revision}")
         
-        url = f"https://open.feishu.cn/open-apis/docx/v1/documents/{document_id}/blocks"
+        # 首先获取文档的根block_id
+        doc_info = await self.read_document(document_id)
+        # 根据飞书API文档，要向文档添加内容，需要使用文档的document_id作为block_id参数
+        block_id = document_id
+        
+        # 正确的API路径: https://open.feishu.cn/open-apis/docx/v1/documents/:document_id/blocks/:block_id/children
+        url = f"https://open.feishu.cn/open-apis/docx/v1/documents/{document_id}/blocks/{block_id}/children"
         headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json; charset=utf-8"

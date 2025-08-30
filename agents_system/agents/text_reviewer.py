@@ -155,20 +155,23 @@ class TextReviewerAgent(BaseAgent):
                 review_result = await self.review_text(review_request)
                 
                 # 构造写入内容
-                # 这里需要根据飞书文档API的要求构造写入内容
+                # 根据飞书API文档，正确的格式应该包含children字段
                 write_content = {
-                    "blocks": [
+                    "children": [
                         {
                             "block_type": 2,  # paragraph
-                            "children": [
-                                {
-                                    "text_run": {
-                                        "content": review_result.corrected_text
+                            "text": {
+                                "elements": [
+                                    {
+                                        "text_run": {
+                                            "content": review_result.corrected_text
+                                        }
                                     }
-                                }
-                            ]
+                                ]
+                            }
                         }
-                    ]
+                    ],
+                    "index": 0  # 插入到开头位置
                 }
                 
                 # 将处理结果写回飞书文档，带上版本号以防止冲突
