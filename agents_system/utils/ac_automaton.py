@@ -160,8 +160,8 @@ class ACAutomaton:
                     for part in parts:
                         part = part.strip('"')
                         if part:
-                            # 处理用顿号、逗号等分隔的多个词
-                            sub_words = re.split(r'[、,，;；\s]+', part)
+                            # 处理用顿号、逗号、分号、斜杠等分隔的多个词
+                            sub_words = re.split(r'[、,，;；/\s]+', part)
                             words.extend(sub_words)
                     
                     for word in words:
