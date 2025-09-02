@@ -157,17 +157,18 @@ class TextReviewerAgent(BaseAgent):
         if not matches:
             return text
 
-        # Sort matches by start index descending to avoid offset issues
-        matches.sort(key=lambda x: x[1], reverse=True)
-
-        # Use a list for efficient insertions
-        result = list(text)
-
-        for word, start, end in matches:
-            # Replace the word with the wrapped version
-            result[start:end] = ['{'] + list(word) + ['}']
-
-        return ''.join(result)
+        # 标记违禁词（按起始位置升序排列，从前往后处理，避免位置偏移）
+        marked_text = list(text)
+        offset = 0
+        
+        # 按照起始位置升序排列，从前往后处理
+        for word, start, end in sorted(matches, key=lambda x: x[1]):
+            # 插入标记
+            marked_text.insert(end + offset, '}')
+            marked_text.insert(start + offset, '{')
+            offset += 2
+        
+        return ''.join(marked_text)
     
     async def process_feishu_document(self, request: FeishuDocumentRequest) -> dict:
         """

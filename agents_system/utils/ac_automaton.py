@@ -112,20 +112,26 @@ class ACAutomaton:
                     result.append((temp.word, start_pos, i + 1))
                 temp = temp.fail
         
-        # 按起始位置排序并去重
+        # 按起始位置排序
         result.sort(key=lambda x: x[1])
-        # 去除重复匹配（保留最长的匹配）
-        filtered_result = []
-        for i, (word, start, end) in enumerate(result):
-            # 检查是否被前一个更长的匹配包含
-            is_contained = False
-            for j in range(i):
-                prev_word, prev_start, prev_end = result[j]
-                if prev_start <= start and end <= prev_end:
-                    is_contained = True
-                    break
-            if not is_contained:
-                filtered_result.append((word, start, end))
+        
+        # 去除重叠匹配（保留最长的匹配）
+        if not result:
+            return result
+            
+        filtered_result = [result[0]]
+        for i in range(1, len(result)):
+            current_word, current_start, current_end = result[i]
+            prev_word, prev_start, prev_end = filtered_result[-1]
+            
+            # 如果当前匹配与前一个匹配重叠
+            if current_start < prev_end:
+                # 选择较长的匹配
+                if (current_end - current_start) > (prev_end - prev_start):
+                    filtered_result[-1] = (current_word, current_start, current_end)
+            else:
+                # 不重叠，直接添加
+                filtered_result.append((current_word, current_start, current_end))
         
         return filtered_result
     
@@ -143,8 +149,21 @@ class ACAutomaton:
             for line in f:
                 line = line.strip()
                 if line:
-                    # 处理包含多个违禁词的行（用顿号、逗号等分隔）
-                    words = re.split(r'[、,，;；\s]+', line)
+                    # 处理包含多个违禁词的行（用双引号分隔）
+                    # 先去掉行首行尾的引号（如果有的话）
+                    if line.startswith('"') and line.endswith('"'):
+                        line = line[1:-1]
+                    
+                    # 按双引号分割，提取违禁词
+                    words = []
+                    parts = line.split('""')
+                    for part in parts:
+                        part = part.strip('"')
+                        if part:
+                            # 处理用顿号、逗号等分隔的多个词
+                            sub_words = re.split(r'[、,，;；\s]+', part)
+                            words.extend(sub_words)
+                    
                     for word in words:
                         word = word.strip()
                         if word and not any(keyword in word for keyword in 
