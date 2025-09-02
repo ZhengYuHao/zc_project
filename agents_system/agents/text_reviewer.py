@@ -8,7 +8,7 @@ import asyncio
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.base_agent import BaseAgent
-from models.llm import get_qwen_model
+from models.doubao import get_doubao_model
 from models.feishu import get_feishu_client, DocumentVersionError
 from utils.ac_automaton import ACAutomaton
 
@@ -45,7 +45,7 @@ class TextReviewerAgent(BaseAgent):
     
     def __init__(self):
         super().__init__("text_reviewer")
-        self.llm = get_qwen_model()
+        self.llm = get_doubao_model()
         self.feishu_client = get_feishu_client()
         # 添加文档处理锁，防止同一文档并发处理
         self.document_locks = {}

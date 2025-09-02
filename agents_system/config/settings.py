@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     QWEN_MODEL_NAME: str = Field(default="qwen-plus", alias="QWEN_MODEL_NAME")
     QWEN_API_BASE: str = Field(default="https://dashscope.aliyuncs.com/api/v1", alias="QWEN_API_BASE")
     
+    # 豆包大模型配置
+    DOUBAO_API_KEY: Optional[str] = Field(default=None, alias="DOUBAO_API_KEY")
+    DOUBAO_MODEL_NAME: Optional[str] = Field(default=None, alias="DOUBAO_MODEL_NAME")
+    
     # 日志配置
     LOG_LEVEL: str = Field(default="INFO", alias="LOG_LEVEL")
     LOG_FILE: Optional[str] = Field(default="logs/agents_system.log", alias="LOG_FILE")
@@ -25,10 +29,9 @@ class Settings(BaseSettings):
     FEISHU_VERIFY_TOKEN: Optional[str] = Field(default=None, alias="FEISHU_VERIFY_TOKEN")
     FEISHU_ENCRYPT_KEY: Optional[str] = Field(default=None, alias="FEISHU_ENCRYPT_KEY")
     
-    model_config = {
-        "env_file": os.path.join(os.path.dirname(__file__), "..", ".env"),
-        "env_file_encoding": "utf-8"
-    }
+    class Config:
+        env_file = os.path.join(os.path.dirname(__file__), "..", ".env")
+        env_file_encoding = "utf-8"
 
 
 settings = Settings()
