@@ -10,6 +10,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.base_agent import BaseAgent
 from models.llm import get_qwen_model
 from models.feishu import get_feishu_client, DocumentVersionError
+from utils.ac_automaton import ACAutomaton
 
 
 class TextReviewRequest(BaseModel):
@@ -52,6 +53,31 @@ class TextReviewerAgent(BaseAgent):
         self.router.post("/review", response_model=TextReviewResponse)(self.review_text)
         self.router.post("/feishu/document", response_model=dict)(self.process_feishu_document)
         self.router.post("/feishu/message", response_model=dict)(self.process_feishu_message)
+        
+        # 初始化AC自动机并加载违禁词
+        self._init_prohibited_words()
+    
+    def _init_prohibited_words(self):
+        """
+        初始化违禁词AC自动机
+        """
+        self.logger.info("开始初始化违禁词AC自动机")
+        try:
+            self.ac_automaton = ACAutomaton()
+            
+            # 从目录中的所有文本文件构建AC自动机
+            prohibited_words_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                                              "prohibited_words_output_v2")
+            
+            if os.path.exists(prohibited_words_dir):
+                self.ac_automaton.build_from_directory(prohibited_words_dir)
+                self.logger.info("违禁词AC自动机初始化完成")
+            else:
+                self.logger.warning(f"违禁词目录不存在: {prohibited_words_dir}")
+                
+        except Exception as e:
+            self.logger.error(f"初始化违禁词AC自动机失败: {e}")
+            self.ac_automaton = None
     
     async def process(self, input_data: TextReviewRequest) -> TextReviewResponse:
         """
@@ -77,17 +103,21 @@ class TextReviewerAgent(BaseAgent):
         """
         self.logger.info(f"Reviewing text: {request.text[:50]}...")
         
+        # 使用AC自动机检测并标记违禁词
+        marked_text = self._mark_prohibited_words(request.text)
+        self.logger.info(f"Marked text: {marked_text}")
         # 构建提示词
         prompt = f"""
         请审核以下文本中的错别字和语言逻辑问题：
 
-        文本内容：{request.text}
+        文本内容：{marked_text}
 
         要求：
         1. 指出并纠正文本中的错别字
         2. 优化语言逻辑和表达方式
         3. 保持原意不变
-        4. 用{request.language}语言回答
+        4. 对于用{{}}标记的违禁词，请提供合适的替代词,并在原文中直接替代。
+        5. 用{request.language}语言回答
         
         请直接返回纠正后的文本，不需要额外说明。
         """
@@ -108,6 +138,36 @@ class TextReviewerAgent(BaseAgent):
         
         self.logger.info("Text review completed")
         return response
+    
+    def _mark_prohibited_words(self, text: str) -> str:
+        """
+        使用AC自动机检测文本中的违禁词，并用{}标记
+        
+        Args:
+            text: 要检测的文本
+            
+        Returns:
+            标记了违禁词的文本
+        """
+        if not self.ac_automaton:
+            self.logger.warning("AC自动机未初始化，无法检测违禁词")
+            return text
+
+        matches = self.ac_automaton.search(text)
+        if not matches:
+            return text
+
+        # Sort matches by start index descending to avoid offset issues
+        matches.sort(key=lambda x: x[1], reverse=True)
+
+        # Use a list for efficient insertions
+        result = list(text)
+
+        for word, start, end in matches:
+            # Replace the word with the wrapped version
+            result[start:end] = ['{'] + list(word) + ['}']
+
+        return ''.join(result)
     
     async def process_feishu_document(self, request: FeishuDocumentRequest) -> dict:
         """
