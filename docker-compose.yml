@@ -1,10 +1,9 @@
-version: '3.8'
 
 services:
   agents-system:
     build: .
     ports:
-      - "8000:8000"
+      - "8847:8847"
     volumes:
       - ./logs:/app/logs
       - ./data:/app/data
@@ -12,7 +11,6 @@ services:
       - DOUBAO_API_KEY=${DOUBAO_API_KEY}
       - FEISHU_APP_ID=${FEISHU_APP_ID}
       - FEISHU_APP_SECRET=${FEISHU_APP_SECRET}
-      - FEISHU_VERIFY_TOKEN=${FEISHU_VERIFY_TOKEN}
-      - FEISHU_ENCRYPT_KEY=${FEISHU_ENCRYPT_KEY}
+      - DOUBAO_MODEL_NAME=${DOUBAO_MODEL_NAME}
     env_file:
       - .env
