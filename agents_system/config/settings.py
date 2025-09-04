@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = Field(default="Agents System", alias="PROJECT_NAME")
     PROJECT_VERSION: str = Field(default="1.0.0", alias="PROJECT_VERSION")
     DEBUG: bool = Field(default=False, alias="DEBUG")
+    HOST: str = Field(default="0.0.0.0", alias="HOST")
+    PORT: int = Field(default=8000, alias="PORT")
     
     # Qwen大模型配置
     QWEN_API_KEY: Optional[str] = Field(default=None, alias="QWEN_API_KEY")
@@ -28,6 +30,12 @@ class Settings(BaseSettings):
     FEISHU_APP_SECRET: Optional[str] = Field(default=None, alias="FEISHU_APP_SECRET")
     FEISHU_VERIFY_TOKEN: Optional[str] = Field(default=None, alias="FEISHU_VERIFY_TOKEN")
     FEISHU_ENCRYPT_KEY: Optional[str] = Field(default=None, alias="FEISHU_ENCRYPT_KEY")
+    
+    # 图文大纲生成智能体配置
+    GRAPHIC_OUTLINE_DEFAULT_STYLE: str = Field(default="标准", alias="GRAPHIC_OUTLINE_DEFAULT_STYLE")
+    GRAPHIC_OUTLINE_LLM_MODEL: str = Field(default="doubao", alias="GRAPHIC_OUTLINE_LLM_MODEL")
+    GRAPHIC_OUTLINE_MAX_RETRIES: int = Field(default=3, alias="GRAPHIC_OUTLINE_MAX_RETRIES")
+    GRAPHIC_OUTLINE_TIMEOUT: int = Field(default=60, alias="GRAPHIC_OUTLINE_TIMEOUT")
     
     class Config:
         env_file = os.path.join(os.path.dirname(__file__), "..", ".env")
