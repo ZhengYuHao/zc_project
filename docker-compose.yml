@@ -5,7 +5,7 @@ services:
     ports:
       - "8847:8847"
     volumes:
-      - ./logs:/app/logs
+      - /home/agent/zc_jxnu_agents/docker_model_log:/app/logs
       - ./data:/app/data
     environment:
       - DOUBAO_API_KEY=${DOUBAO_API_KEY}
