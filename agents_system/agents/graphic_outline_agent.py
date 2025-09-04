@@ -11,6 +11,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.base_agent import BaseAgent
 from models.feishu import get_feishu_client, DocumentVersionError
 from models.doubao import call_doubao
+from config.settings import settings
 from utils.logger import get_logger
 
 
@@ -18,7 +19,7 @@ class GraphicOutlineRequest(BaseModel):
     """图文大纲生成请求模型"""
     topic: str  # 主题
     requirements: Optional[str] = None  # 要求
-    style: Optional[str] = "标准"  # 风格
+    style: Optional[str] = None  # 风格
 
 
 class GraphicOutlineResponse(BaseModel):
@@ -57,6 +58,11 @@ class GraphicOutlineAgent(BaseAgent):
         super().__init__("graphic_outline")
         self.feishu_client = get_feishu_client()
         self.logger = get_logger("agent.graphic_outline")
+        # 从配置文件中读取配置
+        self.default_style = settings.GRAPHIC_OUTLINE_DEFAULT_STYLE
+        self.llm_model = settings.GRAPHIC_OUTLINE_LLM_MODEL
+        self.max_retries = settings.GRAPHIC_OUTLINE_MAX_RETRIES
+        self.timeout = settings.GRAPHIC_OUTLINE_TIMEOUT
         
         # 添加特定路由
         self.router.post("/generate", response_model=GraphicOutlineResponse)(self.generate_outline)
@@ -91,7 +97,7 @@ class GraphicOutlineAgent(BaseAgent):
             outline_data = await self._generate_outline_with_llm(
                 request.topic, 
                 request.requirements, 
-                request.style or "标准"  # 处理None值
+                request.style or self.default_style  # 使用配置的默认风格
             )
             
             # 创建飞书电子表格
@@ -158,49 +164,55 @@ class GraphicOutlineAgent(BaseAgent):
         只返回JSON，不要包含其他内容。
         """
         
-        try:
-            # 调用大模型生成大纲
-            result_text = await call_doubao(prompt)
-            
-            # 解析JSON结果
-            import json
-            outline_data = json.loads(result_text)
-            
-            self.logger.info(f"Successfully generated outline with LLM for topic: {topic}")
-            return outline_data
-            
-        except json.JSONDecodeError as e:
-            self.logger.error(f"Failed to parse LLM response as JSON: {str(e)}")
-            # 返回默认大纲数据
-            default_outline = {
-                "topic": topic,
-                "sections": [
-                    {
-                        "title": "引言",
-                        "content": "简要介绍主题背景和重要性",
-                        "images": ["intro_image.jpg"],
-                        "word_count": 100
-                    },
-                    {
-                        "title": "主要内容",
-                        "content": "详细阐述主题的核心内容",
-                        "images": ["main_image1.jpg", "main_image2.jpg"],
-                        "word_count": 300
-                    },
-                    {
-                        "title": "总结",
-                        "content": "总结要点并提出展望",
-                        "images": [],
-                        "word_count": 50
+        # 带重试机制的调用
+        for attempt in range(self.max_retries):
+            try:
+                # 调用大模型生成大纲
+                result_text = await call_doubao(prompt)
+                
+                # 解析JSON结果
+                import json
+                outline_data = json.loads(result_text)
+                
+                self.logger.info(f"Successfully generated outline with LLM for topic: {topic}")
+                return outline_data
+                
+            except json.JSONDecodeError as e:
+                self.logger.error(f"Failed to parse LLM response as JSON (attempt {attempt+1}/{self.max_retries}): {str(e)}")
+                if attempt == self.max_retries - 1:  # 最后一次尝试
+                    # 返回默认大纲数据
+                    default_outline = {
+                        "topic": topic,
+                        "sections": [
+                            {
+                                "title": "引言",
+                                "content": "简要介绍主题背景和重要性",
+                                "images": ["intro_image.jpg"],
+                                "word_count": 100
+                            },
+                            {
+                                "title": "主要内容",
+                                "content": "详细阐述主题的核心内容",
+                                "images": ["main_image1.jpg", "main_image2.jpg"],
+                                "word_count": 300
+                            },
+                            {
+                                "title": "总结",
+                                "content": "总结要点并提出展望",
+                                "images": [],
+                                "word_count": 50
+                            }
+                        ],
+                        "total_words": 450,
+                        "estimated_time": "3分钟"
                     }
-                ],
-                "total_words": 450,
-                "estimated_time": "3分钟"
-            }
-            return default_outline
-        except Exception as e:
-            self.logger.error(f"Error generating outline with LLM: {str(e)}")
-            raise
+                    return default_outline
+                await asyncio.sleep(1)  # 等待1秒后重试
+            except Exception as e:
+                self.logger.error(f"Error generating outline with LLM (attempt {attempt+1}/{self.max_retries}): {str(e)}")
+                if attempt == self.max_retries - 1:  # 最后一次尝试
+                    raise
+                await asyncio.sleep(1)  # 等待1秒后重试
     
     async def _create_feishu_spreadsheet(self, title: str) -> str:
         """
@@ -218,8 +230,8 @@ class GraphicOutlineAgent(BaseAgent):
             # 获取飞书访问令牌
             token = await self.feishu_client.get_tenant_access_token()
             
-            # 飞书创建电子表格的API endpoint
-            url = "https://open.feishu.cn/open-apis/drive/v1/files"
+            # 飞书创建电子表格的API endpoint (使用正确的API端点)
+            url = "https://open.feishu.cn/open-apis/sheets/v3/spreadsheets"
             headers = {
                 "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json; charset=utf-8"
@@ -227,22 +239,29 @@ class GraphicOutlineAgent(BaseAgent):
             
             # 请求体
             payload = {
-                "name": f"{title} - 图文大纲",
-                "type": "sheet",  # 电子表格类型
-                "folder_token": ""  # 可以指定文件夹token，留空则创建在根目录
+                "title": f"{title} - 图文大纲"
             }
             
             # 发送请求创建电子表格
             async with httpx.AsyncClient() as client:
-                response = await client.post(url, headers=headers, json=payload)
+                response = await client.post(url, headers=headers, json=payload, timeout=self.timeout)
                 response.raise_for_status()
                 
                 result = response.json()
+                self.logger.info(f"Feishu API response: {result}")
+                
                 if result.get("code") != 0:
                     raise Exception(f"Failed to create spreadsheet: {result}")
                 
-                # 获取电子表格token
-                spreadsheet_token = result["data"]["token"]
+                # 获取电子表格token (根据实际响应结构调整)
+                # 根据错误信息，我们需要检查响应结构并正确提取token
+                if "data" in result and "spreadsheet" in result["data"]:
+                    spreadsheet_token = result["data"]["spreadsheet"]["spreadsheet_token"]
+                elif "data" in result and "spreadsheet_token" in result["data"]:
+                    spreadsheet_token = result["data"]["spreadsheet_token"]
+                else:
+                    raise Exception(f"Unexpected API response structure: {result}")
+                
                 self.logger.info(f"Created Feishu spreadsheet with token: {spreadsheet_token}")
                 return spreadsheet_token
                 
@@ -277,15 +296,28 @@ class GraphicOutlineAgent(BaseAgent):
             
             async with httpx.AsyncClient() as client:
                 # 获取电子表格元数据
-                meta_response = await client.get(meta_url, headers=headers)
+                meta_response = await client.get(meta_url, headers=headers, timeout=self.timeout)
                 meta_response.raise_for_status()
                 meta_result = meta_response.json()
+                
+                self.logger.info(f"Feishu metainfo API response: {meta_result}")
                 
                 if meta_result.get("code") != 0:
                     raise Exception(f"Failed to get spreadsheet metadata: {meta_result}")
                 
-                # 获取第一个工作表的sheet_id
-                sheet_id = meta_result["data"]["sheets"][0]["sheet_id"]
+                # 获取第一个工作表的sheet_id (根据实际响应结构调整)
+                if "data" in meta_result and "sheets" in meta_result["data"] and len(meta_result["data"]["sheets"]) > 0:
+                    first_sheet = meta_result["data"]["sheets"][0]
+                    # 检查是否存在sheet_id字段，如果不存在则使用其他可能的字段
+                    if "sheetId" in first_sheet:
+                        sheet_id = first_sheet["sheetId"]
+                    elif "sheet_id" in first_sheet:
+                        sheet_id = first_sheet["sheet_id"]
+                    else:
+                        sheet_id = first_sheet["sheetId"]  # 默认使用sheetId
+                else:
+                    raise Exception(f"Unexpected metainfo API response structure: {meta_result}")
+                
                 self.logger.info(f"Using sheet_id: {sheet_id}")
                 
                 # 准备要写入的数据
@@ -309,23 +341,42 @@ class GraphicOutlineAgent(BaseAgent):
                 values.append(["", "", "总计", str(outline_data.get("total_words", 0))])
                 values.append(["", "", "预计时间", outline_data.get("estimated_time", "")])
                 
-                # 写入数据到电子表格
+                # 计算数据范围
+                row_count = len(values)
+                col_count = max(len(row) for row in values) if values else 0
+                
+                # 写入数据到电子表格 (使用正确的API端点和范围格式)
                 write_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values"
                 write_payload = {
-                    "valueRanges": [{
-                        "sheetId": sheet_id,
-                        "startRow": 0,
-                        "startColumn": 0,
+                    "valueRange": {
+                        "range": f"{sheet_id}!A1:{chr(64 + col_count)}{row_count}",
                         "values": values
-                    }]
+                    }
                 }
                 
-                write_response = await client.put(write_url, headers=headers, json=write_payload)
+                self.logger.info(f"Writing data to spreadsheet with payload: {write_payload}")
+                
+                # 使用PUT方法
+                write_response = await client.put(write_url, headers=headers, json=write_payload, timeout=self.timeout)
+                self.logger.info(f"Write API response status code: {write_response.status_code}")
+                self.logger.info(f"Write API response headers: {dict(write_response.headers)}")
+                self.logger.info(f"Write API response text: {write_response.text}")
+                
                 write_response.raise_for_status()
                 write_result = write_response.json()
                 
+                self.logger.info(f"Write response: {write_result}")
+                
+                # 检查API返回的code，如果不为0则抛出异常
                 if write_result.get("code") != 0:
-                    raise Exception(f"Failed to write data to spreadsheet: {write_result}")
+                    error_msg = f"Failed to write data to spreadsheet. API returned code: {write_result.get('code')}, message: {write_result.get('msg')}"
+                    self.logger.error(error_msg)
+                    # 根据错误码提供更具体的错误信息
+                    if write_result.get('code') == 99991666:
+                        self.logger.error("Possible permission issue: check if your Feishu app has the required permissions to write to spreadsheets")
+                    elif write_result.get('code') == 90202:
+                        self.logger.error("Range format error: check if the range format is correct")
+                    raise Exception(error_msg)
                 
                 self.logger.info(f"Successfully populated spreadsheet data for spreadsheet: {spreadsheet_token}")
                 return True
