@@ -239,11 +239,16 @@ class GraphicOutlineAgent(BaseAgent):
                 "Content-Type": "application/json; charset=utf-8"
             }
             
-            # 请求体
+            # 请求体 - 根据飞书API文档，正确的参数是name和type
             payload = {
-                "name": f"{title} - 图文大纲",
-                "folder_token": self.template_folder_token  # 添加必需的folder_token参数
+                "name": f"{title} - 图文大纲"
             }
+            
+            # 如果配置了文件夹token，则添加type和folder_token参数
+            # 根据错误信息，type应该是'sheet'而不是'explorer'
+            if self.template_folder_token:
+                payload["type"] = "sheet"
+                payload["folder_token"] = self.template_folder_token
             
             self.logger.info(f"Copy file request URL: {url}")
             self.logger.info(f"Copy file request headers: {headers}")
@@ -348,11 +353,15 @@ class GraphicOutlineAgent(BaseAgent):
                 values.append(["", "", "总计", str(outline_data.get("total_words", 0))])
                 values.append(["", "", "预计时间", outline_data.get("estimated_time", "")])
                 
+                # 计算数据范围
+                row_count = len(values)
+                col_count = max(len(row) for row in values) if values else 1
+                
                 # 写入数据到电子表格 (使用正确的API端点和范围格式)
                 write_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values"
                 write_payload = {
                     "valueRange": {
-                        "range": f"{sheet_id}!A3",
+                        "range": f"{sheet_id}!A3:{chr(64 + col_count)}{2 + row_count}",
                         "values": values
                     }
                 }
