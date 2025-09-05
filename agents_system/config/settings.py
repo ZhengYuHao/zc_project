@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     GRAPHIC_OUTLINE_MAX_RETRIES: int = Field(default=3, alias="GRAPHIC_OUTLINE_MAX_RETRIES")
     GRAPHIC_OUTLINE_TIMEOUT: int = Field(default=60, alias="GRAPHIC_OUTLINE_TIMEOUT")
     
+    #表格模版token
+    GRAPHIC_OUTLINE_TEMPLATE_SPREADSHEET_TOKEN:Optional[str] = Field(default=None, alias="GRAPHIC_OUTLINE_TEMPLATE_SPREADSHEET_TOKEN")
+    GRAPHIC_OUTLINE_TEMPLATE_FOLDER_TOKEN:Optional[str] = Field(default=None, alias="GRAPHIC_OUTLINE_TEMPLATE_FOLDER_TOKEN")
     class Config:
         env_file = os.path.join(os.path.dirname(__file__), "..", ".env")
         env_file_encoding = "utf-8"

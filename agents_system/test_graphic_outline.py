@@ -65,5 +65,62 @@ async def test_graphic_outline_agent():
         traceback.print_exc()
 
 
+async def test_template_based_spreadsheet():
+    """测试基于模板的电子表格创建功能"""
+    print("Testing Template-based Spreadsheet Creation...")
+    
+    # 创建智能体实例
+    agent = GraphicOutlineAgent()
+    
+    # 检查是否配置了模板token
+    if not agent.template_spreadsheet_token:
+        print("Template spreadsheet token not configured. Skipping template test.")
+        return
+    
+    print(f"Using template spreadsheet token: {agent.template_spreadsheet_token}")
+    
+    try:
+        # 测试基于模板创建电子表格
+        print("Creating spreadsheet from template...")
+        spreadsheet_token = await agent._create_spreadsheet_from_template("测试模板表格")
+        print(f"Successfully created spreadsheet from template: {spreadsheet_token}")
+        
+        # 测试数据填充
+        test_outline_data = {
+            "topic": "测试主题",
+            "sections": [
+                {
+                    "title": "测试章节1",
+                    "content": "这是测试章节1的内容描述",
+                    "images": ["图片1.jpg", "图片2.jpg"],
+                    "word_count": 200
+                },
+                {
+                    "title": "测试章节2",
+                    "content": "这是测试章节2的内容描述",
+                    "images": ["图片3.jpg"],
+                    "word_count": 150
+                }
+            ],
+            "total_words": 350,
+            "estimated_time": "3分钟"
+        }
+        
+        print("Populating spreadsheet with test data...")
+        await agent._populate_spreadsheet_data(spreadsheet_token, test_outline_data)
+        print("Successfully populated spreadsheet with test data!")
+        
+    except Exception as e:
+        print(f"Error during template-based spreadsheet testing: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 if __name__ == "__main__":
-    asyncio.run(test_graphic_outline_agent())
+    # 运行原始测试
+    # asyncio.run(test_graphic_outline_agent())
+    
+    # print("\n" + "="*50 + "\n")
+    
+    # 运行模板测试
+    asyncio.run(test_template_based_spreadsheet())

@@ -63,6 +63,8 @@ class GraphicOutlineAgent(BaseAgent):
         self.llm_model = settings.GRAPHIC_OUTLINE_LLM_MODEL
         self.max_retries = settings.GRAPHIC_OUTLINE_MAX_RETRIES
         self.timeout = settings.GRAPHIC_OUTLINE_TIMEOUT
+        self.template_spreadsheet_token = settings.GRAPHIC_OUTLINE_TEMPLATE_SPREADSHEET_TOKEN
+        self.template_folder_token = settings.GRAPHIC_OUTLINE_TEMPLATE_FOLDER_TOKEN
         
         # 添加特定路由
         self.router.post("/generate", response_model=GraphicOutlineResponse)(self.generate_outline)
@@ -100,8 +102,8 @@ class GraphicOutlineAgent(BaseAgent):
                 request.style or self.default_style  # 使用配置的默认风格
             )
             
-            # 创建飞书电子表格
-            spreadsheet_token = await self._create_feishu_spreadsheet(request.topic)
+            # 基于模板创建飞书电子表格
+            spreadsheet_token = await self._create_spreadsheet_from_template(request.topic)
             
             # 填充数据到电子表格
             await self._populate_spreadsheet_data(spreadsheet_token, outline_data)
@@ -214,9 +216,9 @@ class GraphicOutlineAgent(BaseAgent):
                     raise
                 await asyncio.sleep(1)  # 等待1秒后重试
     
-    async def _create_feishu_spreadsheet(self, title: str) -> str:
+    async def _create_spreadsheet_from_template(self, title: str) -> str:
         """
-        创建飞书电子表格
+        基于模板创建飞书电子表格
         
         Args:
             title: 电子表格标题
@@ -224,14 +226,14 @@ class GraphicOutlineAgent(BaseAgent):
         Returns:
             电子表格token
         """
-        self.logger.info(f"Creating Feishu spreadsheet with title: {title}")
+        self.logger.info(f"Creating Feishu spreadsheet from template with title: {title}")
         
         try:
             # 获取飞书访问令牌
             token = await self.feishu_client.get_tenant_access_token()
             
-            # 飞书创建电子表格的API endpoint (使用正确的API端点)
-            url = "https://open.feishu.cn/open-apis/sheets/v3/spreadsheets"
+            # 飞书复制文件的API endpoint (使用正确的API端点)
+            url = f"https://open.feishu.cn/open-apis/drive/v1/files/{self.template_spreadsheet_token}/copy"
             headers = {
                 "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json; charset=utf-8"
@@ -239,34 +241,40 @@ class GraphicOutlineAgent(BaseAgent):
             
             # 请求体
             payload = {
-                "title": f"{title} - 图文大纲"
+                "name": f"{title} - 图文大纲",
+                "folder_token": self.template_folder_token  # 添加必需的folder_token参数
             }
+            
+            self.logger.info(f"Copy file request URL: {url}")
+            self.logger.info(f"Copy file request headers: {headers}")
+            self.logger.info(f"Copy file request payload: {payload}")
             
             # 发送请求创建电子表格
             async with httpx.AsyncClient() as client:
                 response = await client.post(url, headers=headers, json=payload, timeout=self.timeout)
+                self.logger.info(f"Copy file response status code: {response.status_code}")
+                self.logger.info(f"Copy file response headers: {dict(response.headers)}")
+                self.logger.info(f"Copy file response text: {response.text}")
+                
                 response.raise_for_status()
                 
                 result = response.json()
                 self.logger.info(f"Feishu API response: {result}")
                 
                 if result.get("code") != 0:
-                    raise Exception(f"Failed to create spreadsheet: {result}")
+                    raise Exception(f"Failed to create spreadsheet from template: {result}")
                 
-                # 获取电子表格token (根据实际响应结构调整)
-                # 根据错误信息，我们需要检查响应结构并正确提取token
-                if "data" in result and "spreadsheet" in result["data"]:
-                    spreadsheet_token = result["data"]["spreadsheet"]["spreadsheet_token"]
-                elif "data" in result and "spreadsheet_token" in result["data"]:
-                    spreadsheet_token = result["data"]["spreadsheet_token"]
+                # 获取电子表格token
+                if "data" in result and "file" in result["data"]:
+                    spreadsheet_token = result["data"]["file"]["token"]
                 else:
                     raise Exception(f"Unexpected API response structure: {result}")
                 
-                self.logger.info(f"Created Feishu spreadsheet with token: {spreadsheet_token}")
+                self.logger.info(f"Created Feishu spreadsheet from template with token: {spreadsheet_token}")
                 return spreadsheet_token
                 
         except Exception as e:
-            self.logger.error(f"Error creating Feishu spreadsheet: {str(e)}")
+            self.logger.error(f"Error creating Feishu spreadsheet from template: {str(e)}")
             raise
     
     async def _populate_spreadsheet_data(self, spreadsheet_token: str, outline_data: Dict[str, Any]) -> bool:
@@ -322,9 +330,8 @@ class GraphicOutlineAgent(BaseAgent):
                 
                 # 准备要写入的数据
                 values = [
-                    ["图文大纲", outline_data.get("topic", "")],  # 标题行
-                    ["", ""],  # 空行
-                    ["章节", "内容", "图片", "字数"],  # 表头
+                    [outline_data.get("topic", "")],  # 主题行
+                    [""],  # 空行
                 ]
                 
                 # 添加章节数据
@@ -341,15 +348,11 @@ class GraphicOutlineAgent(BaseAgent):
                 values.append(["", "", "总计", str(outline_data.get("total_words", 0))])
                 values.append(["", "", "预计时间", outline_data.get("estimated_time", "")])
                 
-                # 计算数据范围
-                row_count = len(values)
-                col_count = max(len(row) for row in values) if values else 0
-                
                 # 写入数据到电子表格 (使用正确的API端点和范围格式)
                 write_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values"
                 write_payload = {
                     "valueRange": {
-                        "range": f"{sheet_id}!A1:{chr(64 + col_count)}{row_count}",
+                        "range": f"{sheet_id}!A3",
                         "values": values
                     }
                 }
@@ -402,8 +405,8 @@ class GraphicOutlineAgent(BaseAgent):
             topic = request.get("topic", "默认主题")
             outline_data = request.get("outline_data", {})
             
-            # 创建飞书电子表格
-            spreadsheet_token = await self._create_feishu_spreadsheet(topic)
+            # 基于模板创建飞书电子表格
+            spreadsheet_token = await self._create_spreadsheet_from_template(topic)
             
             # 填充数据到电子表格
             await self._populate_spreadsheet_data(spreadsheet_token, outline_data)
