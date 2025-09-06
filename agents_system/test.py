@@ -1,5 +1,12 @@
 import requests
 import json
+import sys
+import os
+
+# 添加项目根目录到Python路径
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
+from config.settings import settings
 
 def get_tenant_access_token(app_id, app_secret):
     """获取飞书tenant_access_token"""
@@ -89,10 +96,16 @@ def check_api_capabilities(token):
     print("- 消息处理：处理飞书消息并回复处理结果")
 
 def main(args):
-    # 从环境变量或直接输入获取飞书应用凭证
-    # 注意：在实际使用中，建议从环境变量或配置文件中读取
-    app_id = "cli_a72f342d747c5013"  # 替换为你的App ID
-    app_secret = "DHKko4zWCtFiQT7UY2J7eeeO3PrdJpsx"  # 替换为你的App Secret
+    # 从settings获取飞书应用凭证
+    app_id = settings.FEISHU_APP_ID
+    app_secret = settings.FEISHU_APP_SECRET
+    
+    if not app_id or not app_secret:
+        print("错误：请在.env文件中设置 FEISHU_APP_ID 和 FEISHU_APP_SECRET")
+        print("在.env文件中添加以下内容：")
+        print("FEISHU_APP_ID=your_app_id")
+        print("FEISHU_APP_SECRET=your_app_secret")
+        return
     
     print("正在获取tenant_access_token...")
     token = get_tenant_access_token(app_id, app_secret)

@@ -87,23 +87,23 @@ async def test_template_based_spreadsheet():
         
         # 测试数据填充
         test_outline_data = {
-            "topic": "测试主题",
-            "sections": [
-                {
-                    "title": "测试章节1",
-                    "content": "这是测试章节1的内容描述",
-                    "images": ["图片1.jpg", "图片2.jpg"],
-                    "word_count": 200
-                },
-                {
-                    "title": "测试章节2",
-                    "content": "这是测试章节2的内容描述",
-                    "images": ["图片3.jpg"],
-                    "word_count": 150
-                }
-            ],
-            "total_words": 350,
-            "estimated_time": "3分钟"
+            # "topic": "测试主题",
+            # "sections": [
+            #     {
+            #         "title": "测试章节1",
+            #         "content": "这是测试章节1的内容描述",
+            #         "images": ["图片1.jpg", "图片2.jpg"],
+            #         "word_count": 200
+            #     },
+            #     {
+            #         "title": "测试章节2",
+            #         "content": "这是测试章节2的内容描述",
+            #         "images": ["图片3.jpg"],
+            #         "word_count": 150
+            #     }
+            # ],
+            # "total_words": 350,
+            # "estimated_time": "3分钟"
         }
         
         print("Populating spreadsheet with test data...")
