@@ -13,6 +13,7 @@ from models.feishu import get_feishu_client, DocumentVersionError
 from models.doubao import call_doubao
 from config.settings import settings
 from utils.logger import get_logger
+from utils.cell_filler import CellFiller
 
 
 class GraphicOutlineRequest(BaseModel):
@@ -61,6 +62,7 @@ class GraphicOutlineAgent(BaseAgent):
         # 从配置文件中读取配置
         self.default_style = settings.GRAPHIC_OUTLINE_DEFAULT_STYLE
         self.llm_model = settings.GRAPHIC_OUTLINE_LLM_MODEL
+        self.cell_filler = CellFiller()  # 添加单元格填充工具
         self.max_retries = settings.GRAPHIC_OUTLINE_MAX_RETRIES
         self.timeout = settings.GRAPHIC_OUTLINE_TIMEOUT
         self.template_spreadsheet_token = settings.GRAPHIC_OUTLINE_TEMPLATE_SPREADSHEET_TOKEN
@@ -103,10 +105,10 @@ class GraphicOutlineAgent(BaseAgent):
             )
             
             # 基于模板创建飞书电子表格
-            spreadsheet_token = await self._create_spreadsheet_from_template(request.topic)
+            spreadsheet_token, sheet_id = await self._create_spreadsheet_from_template(request.topic)
             
             # 填充数据到电子表格
-            await self._populate_spreadsheet_data(spreadsheet_token, outline_data)
+            await self._populate_spreadsheet_data(spreadsheet_token, sheet_id, outline_data)
             
             # 构造响应
             response = GraphicOutlineResponse(
@@ -216,7 +218,7 @@ class GraphicOutlineAgent(BaseAgent):
                     raise
                 await asyncio.sleep(1)  # 等待1秒后重试
     
-    async def _create_spreadsheet_from_template(self, title: str) -> str:
+    async def _create_spreadsheet_from_template(self, title: str) -> tuple:
         """
         基于模板创建飞书电子表格
         
@@ -224,7 +226,7 @@ class GraphicOutlineAgent(BaseAgent):
             title: 电子表格标题
             
         Returns:
-            电子表格token
+            电子表格token和sheet_id的元组
         """
         self.logger.info(f"Creating Feishu spreadsheet from template with title: {title}")
         
@@ -232,20 +234,18 @@ class GraphicOutlineAgent(BaseAgent):
             # 获取飞书访问令牌
             token = await self.feishu_client.get_tenant_access_token()
             
-            # 飞书复制文件的API endpoint (使用正确的API端点)
+            # 飞书复制文件的API endpoint
             url = f"https://open.feishu.cn/open-apis/drive/v1/files/{self.template_spreadsheet_token}/copy"
             headers = {
                 "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json; charset=utf-8"
             }
             
-            # 请求体 - 根据飞书API文档，正确的参数是name和type
+            # 请求体
             payload = {
                 "name": f"{title} - 图文大纲"
             }
             
-            # 如果配置了文件夹token，则添加type和folder_token参数
-            # 根据错误信息，type应该是'sheet'而不是'explorer'
             if self.template_folder_token:
                 payload["type"] = "sheet"
                 payload["folder_token"] = self.template_folder_token
@@ -275,19 +275,35 @@ class GraphicOutlineAgent(BaseAgent):
                 else:
                     raise Exception(f"Unexpected API response structure: {result}")
                 
-                self.logger.info(f"Created Feishu spreadsheet from template with token: {spreadsheet_token}")
-                return spreadsheet_token
+                # 获取sheet_id
+                meta_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/metainfo"
+                meta_response = await client.get(meta_url, headers=headers, timeout=self.timeout)
+                meta_response.raise_for_status()
+                meta_result = meta_response.json()
+                
+                if meta_result.get("code") != 0:
+                    raise Exception(f"Failed to get spreadsheet metadata: {meta_result}")
+                
+                if "data" in meta_result and "sheets" in meta_result["data"] and len(meta_result["data"]["sheets"]) > 0:
+                    first_sheet = meta_result["data"]["sheets"][0]
+                    sheet_id = first_sheet.get("sheetId", first_sheet.get("sheet_id", first_sheet.get("index", "0")))
+                else:
+                    raise Exception(f"Unexpected metainfo API response structure: {meta_result}")
+                
+                self.logger.info(f"Created Feishu spreadsheet from template with token: {spreadsheet_token} and sheet_id: {sheet_id}")
+                return spreadsheet_token, sheet_id
                 
         except Exception as e:
             self.logger.error(f"Error creating Feishu spreadsheet from template: {str(e)}")
             raise
     
-    async def _populate_spreadsheet_data(self, spreadsheet_token: str, outline_data: Dict[str, Any]) -> bool:
+    async def _populate_spreadsheet_data(self, spreadsheet_token: str, sheet_id: str, outline_data: Dict[str, Any]) -> bool:
         """
         填充数据到飞书电子表格
         
         Args:
             spreadsheet_token: 电子表格token
+            sheet_id: 工作表ID
             outline_data: 大纲数据
             
         Returns:
@@ -299,73 +315,45 @@ class GraphicOutlineAgent(BaseAgent):
             # 获取飞书访问令牌
             tenant_token = await self.feishu_client.get_tenant_access_token()
             
-            # 飞书电子表格操作API endpoint
-            # 先获取电子表格元数据，确定工作表
-            meta_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/metainfo"
             headers = {
                 "Authorization": f"Bearer {tenant_token}",
                 "Content-Type": "application/json; charset=utf-8"
             }
             
-            async with httpx.AsyncClient() as client:
-                # 获取电子表格元数据
-                meta_response = await client.get(meta_url, headers=headers, timeout=self.timeout)
-                meta_response.raise_for_status()
-                meta_result = meta_response.json()
+            # 准备要写入的数据（只写入章节数据，不写入主题和空行）
+            values = []
+            
+            # 添加章节数据（不添加主题行和空行，避免覆盖模板内容）
+            sections = outline_data.get("sections", [])
+            for i, section in enumerate(sections):
+                values.append([
+                    str(i + 1),  # 序号
+                    section.get("title", ""),  # 标题
+                    section.get("content", ""),  # 内容
+                    ", ".join(section.get("images", [])),  # 图片
+                    str(section.get("word_count", 0))  # 字数
+                ])
+            
+            # 只有当有数据时才执行写入操作
+            if values:
+                # 计算数据范围 (从A3开始写入，这是模板中通常的数据起始位置)
+                row_count = len(values)
+                col_count = max(len(row) for row in values) if values else 1
+                end_col = chr(64 + col_count) if col_count <= 26 else 'Z'
                 
-                self.logger.info(f"Feishu metainfo API response: {meta_result}")
-                
-                if meta_result.get("code") != 0:
-                    raise Exception(f"Failed to get spreadsheet metadata: {meta_result}")
-                
-                # 获取第一个工作表的sheet_id (根据实际响应结构调整)
-                if "data" in meta_result and "sheets" in meta_result["data"] and len(meta_result["data"]["sheets"]) > 0:
-                    first_sheet = meta_result["data"]["sheets"][0]
-                    # 检查是否存在sheet_id字段，如果不存在则使用其他可能的字段
-                    if "sheetId" in first_sheet:
-                        sheet_id = first_sheet["sheetId"]
-                    elif "sheet_id" in first_sheet:
-                        sheet_id = first_sheet["sheet_id"]
-                    else:
-                        sheet_id = first_sheet.get("index", 0)
-                else:
-                    raise Exception(f"Unexpected metainfo API response structure: {meta_result}")
-                
-                self.logger.info(f"Using sheet_id: {sheet_id}")
-                
-                # 准备要写入的数据（只写入章节数据，不写入主题和空行）
-                values = []
-                
-                # 添加章节数据（不添加主题行和空行，避免覆盖模板内容）
-                sections = outline_data.get("sections", [])
-                for i, section in enumerate(sections):
-                    values.append([
-                        str(i + 1),  # 序号
-                        section.get("title", ""),  # 标题
-                        section.get("content", ""),  # 内容
-                        ", ".join(section.get("images", [])),  # 图片
-                        str(section.get("word_count", 0))  # 字数
-                    ])
-                
-                # 只有当有数据时才执行写入操作
-                if values:
-                    # 计算数据范围 (从A3开始写入，这是模板中通常的数据起始位置)
-                    row_count = len(values)
-                    col_count = max(len(row) for row in values) if values else 1
-                    end_col = chr(64 + col_count) if col_count <= 26 else 'Z'
-                    
-                    # 写入数据到电子表格 (使用正确的API端点和范围格式)
-                    write_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values"
-                    write_payload = {
-                        "valueRange": {
-                            "range": f"{sheet_id}!A3:{end_col}{2 + row_count}",
-                            "values": values
-                        }
+                # 写入数据到电子表格 (使用正确的API端点和范围格式)
+                write_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values"
+                write_payload = {
+                    "valueRange": {
+                        "range": f"{sheet_id}!A3:{end_col}{2 + row_count}",
+                        "values": values
                     }
-                    
-                    self.logger.info(f"Writing data to spreadsheet with payload: {write_payload}")
-                    
-                    # 使用PUT方法
+                }
+                
+                self.logger.info(f"Writing data to spreadsheet with payload: {write_payload}")
+                
+                # 使用PUT方法
+                async with httpx.AsyncClient() as client:
                     write_response = await client.put(write_url, headers=headers, json=write_payload, timeout=self.timeout)
                     self.logger.info(f"Write API response status code: {write_response.status_code}")
                     self.logger.info(f"Write API response headers: {dict(write_response.headers)}")
@@ -386,16 +374,76 @@ class GraphicOutlineAgent(BaseAgent):
                         elif write_result.get('code') == 90202:
                             self.logger.error("Range format error: check if the range format is correct")
                         raise Exception(error_msg)
-                else:
-                    self.logger.info("No data to write to spreadsheet")
-                
-                self.logger.info(f"Successfully populated spreadsheet data for spreadsheet: {spreadsheet_token}")
-                return True
-                
+            else:
+                self.logger.info("No data to write to spreadsheet")
+            
+            self.logger.info(f"Successfully populated spreadsheet data for spreadsheet: {spreadsheet_token}")
+            return True
+            
         except Exception as e:
             self.logger.error(f"Error populating spreadsheet data for spreadsheet {spreadsheet_token}: {str(e)}")
             raise
     
+    async def _fill_custom_data(self, spreadsheet_token: str, sheet_id: str, custom_fill_data: Dict[str, Any]) -> bool:
+        """
+        填充自定义数据到电子表格
+        
+        Args:
+            spreadsheet_token: 电子表格token
+            sheet_id: 工作表ID
+            custom_fill_data: 自定义填充数据，格式：
+                {
+                    "cells": {           # 指定单元格填充
+                        "A1": "A1值",
+                        "B2": "B2值"
+                    }
+                }
+                
+        Returns:
+            是否填充成功
+        """
+        self.logger.info(f"Filling custom data to spreadsheet: {spreadsheet_token}")
+        
+        try:
+            # 获取飞书访问令牌
+            tenant_token = await self.feishu_client.get_tenant_access_token()
+            
+            headers = {
+                "Authorization": f"Bearer {tenant_token}",
+                "Content-Type": "application/json; charset=utf-8"
+            }
+            
+            # 飞书电子表格操作API endpoint
+            write_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values"
+            
+            # 按单元格填充
+            value_ranges = []
+            for cell_ref, value in custom_fill_data["cells"].items():
+                value_ranges.append({
+                    "range": f"{sheet_id}!{cell_ref}:{cell_ref}",
+                    "values": [[value]]
+                })
+            
+            write_payload = {
+                "valueRanges": value_ranges
+            }
+            
+            # 发送请求
+            async with httpx.AsyncClient() as client:
+                response = await client.put(write_url, headers=headers, json=write_payload, timeout=self.timeout)
+                response.raise_for_status()
+                result = response.json()
+                
+                if result.get("code") != 0:
+                    raise Exception(f"Failed to write custom data to spreadsheet: {result}")
+            
+            self.logger.info(f"Successfully filled custom data to spreadsheet: {spreadsheet_token}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error filling custom data to spreadsheet {spreadsheet_token}: {str(e)}")
+            return False
+
     async def create_feishu_sheet(self, request: Dict[str, Any]) -> dict:
         """
         创建飞书电子表格
@@ -412,16 +460,33 @@ class GraphicOutlineAgent(BaseAgent):
             # 从请求中提取数据
             topic = request.get("topic", "默认主题")
             outline_data = request.get("outline_data", {})
+            # 提取自定义填充数据（如果有的话）
+            custom_fill_data = request.get("custom_fill_data", None)
+            # 是否填充大纲数据的标志
+            fill_outline_data = request.get("fill_outline_data", True)
             
             # 基于模板创建飞书电子表格
-            spreadsheet_token = await self._create_spreadsheet_from_template(topic)
+            spreadsheet_token, sheet_id = await self._create_spreadsheet_from_template(topic)
             
-            # 填充数据到电子表格
-            await self._populate_spreadsheet_data(spreadsheet_token, outline_data)
+            # 填充数据到电子表格（仅当fill_outline_data为True时）
+            if fill_outline_data and outline_data:
+                await self._populate_spreadsheet_data(spreadsheet_token, sheet_id, outline_data)
+            
+            # 如果有自定义填充数据，则进行填充
+            if custom_fill_data and "cells" in custom_fill_data:
+                self.logger.info("Filling custom data to spreadsheet")
+                tenant_token = await self.feishu_client.get_tenant_access_token()
+                await self.cell_filler.fill_cells(
+                    spreadsheet_token, 
+                    sheet_id, 
+                    tenant_token, 
+                    custom_fill_data["cells"]
+                )
             
             result = {
                 "status": "success",
                 "spreadsheet_token": spreadsheet_token,
+                "sheet_id": sheet_id,
                 "message": "Successfully created Feishu sheet"
             }
             
@@ -430,6 +495,42 @@ class GraphicOutlineAgent(BaseAgent):
             
         except Exception as e:
             self.logger.error(f"Error creating Feishu sheet: {str(e)}")
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+    
+    async def fill_cells_in_sheet(self, spreadsheet_token: str, sheet_id: str, cell_data: Dict[str, Any]) -> dict:
+        """
+        在指定的电子表格中按单元格引用填充数据（提供给外部调用的简单接口）
+        
+        Args:
+            spreadsheet_token: 电子表格token
+            sheet_id: 工作表ID
+            cell_data: 单元格数据，格式 {"A1": "值1", "B2": "值2"}
+            
+        Returns:
+            处理结果，包含状态和消息的字典
+        """
+        self.logger.info(f"Filling cells in sheet: {spreadsheet_token}")
+        
+        try:
+            # 获取飞书访问令牌
+            tenant_token = await self.feishu_client.get_tenant_access_token()
+            
+            # 使用单元格填充工具填充数据
+            await self.cell_filler.fill_cells(spreadsheet_token, sheet_id, tenant_token, cell_data)
+            
+            result = {
+                "status": "success",
+                "message": "Successfully filled cells"
+            }
+            
+            self.logger.info(f"Successfully filled cells in sheet: {spreadsheet_token}")
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Error filling cells in sheet {spreadsheet_token}: {str(e)}")
             return {
                 "status": "error",
                 "error": str(e)
