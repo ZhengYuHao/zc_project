@@ -324,8 +324,12 @@ class GraphicOutlineAgent(BaseAgent):
             # 准备要写入的数据（只写入特定单元格数据）
             cell_data = {
                 "B1": "你好",  # 在B1单元格插入"你好"
-                "B2": "你好"  # 在B2单元格插入"你好"
+                "B2": "你好",  # 在B2单元格插入"你好"
+                "B3": "你好"  # 在B3单元格插入"你好"
             }
+            
+            # 统一设置单元格格式，确保字体一致
+            await self._set_cell_format(spreadsheet_token, sheet_id, tenant_token, ["B1", "B2"])
             
             # 使用fill_cells_in_sheet方法填充数据
             result = await self.fill_cells_in_sheet(spreadsheet_token, sheet_id, cell_data)
@@ -339,6 +343,134 @@ class GraphicOutlineAgent(BaseAgent):
         except Exception as e:
             self.logger.error(f"Error populating spreadsheet data for spreadsheet {spreadsheet_token}: {str(e)}")
             raise
+    
+    async def _set_cell_format(self, spreadsheet_token: str, sheet_id: str, tenant_token: str, cell_refs: List[str]) -> bool:
+        """
+        设置单元格格式，确保字体一致性
+        
+        Args:
+            spreadsheet_token: 电子表格token
+            sheet_id: 工作表ID
+            tenant_token: 访问令牌
+            cell_refs: 单元格引用列表，如 ["A1", "B2"]
+            
+        Returns:
+            是否设置成功
+        """
+        try:
+            headers = {
+                "Authorization": f"Bearer {tenant_token}",
+                "Content-Type": "application/json; charset=utf-8"
+            }
+            
+            # 为每个单元格分别设置格式
+            for cell_ref in cell_refs:
+                format_payload = {
+                    "appendStyle": {
+                        "range": f"{sheet_id}!{cell_ref}:{cell_ref}",
+                        "style": {
+                            "font": {
+                                "bold": False,
+                                "italic": False,
+                                "fontSize": 12,
+                                "color": "#000000"  # 黑色字体
+                            },
+                            "horizontalAlignment": "CENTER"  # 居中对齐
+                        }
+                    }
+                }
+                
+                # 发送格式设置请求
+                format_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/style"
+                
+                self.logger.info(f"Setting cell format for {cell_ref}")
+                self.logger.info(f"Format URL: {format_url}")
+                self.logger.info(f"Format payload: {format_payload}")
+                
+                async with httpx.AsyncClient() as client:
+                    format_response = await client.put(format_url, headers=headers, json=format_payload, timeout=self.timeout)
+                    self.logger.info(f"Format response status: {format_response.status_code}")
+                    self.logger.info(f"Format response headers: {dict(format_response.headers)}")
+                    
+                    # 尝试解析响应内容
+                    try:
+                        response_text = format_response.text
+                        self.logger.info(f"Format response text: {response_text}")
+                        
+                        format_result = format_response.json()
+                        self.logger.info(f"Format response JSON: {format_result}")
+                        
+                        if format_result.get("code") != 0:
+                            self.logger.warning(f"API returned non-zero code for {cell_ref}: {format_result.get('code')}")
+                            self.logger.warning(f"API message: {format_result.get('msg', 'No message')}")
+                    except Exception as parse_error:
+                        self.logger.error(f"Error parsing response for {cell_ref}: {str(parse_error)}")
+                        self.logger.info(f"Raw response content: {response_text}")
+                    
+                    # 检查状态码
+                    if format_response.status_code != 200:
+                        self.logger.warning(f"Non-200 status code for {cell_ref}: {format_response.status_code}")
+                        return False
+                    
+                    # 检查响应内容
+                    try:
+                        format_result = format_response.json()
+                        if format_result.get("code") != 0:
+                            self.logger.warning(f"Failed to set cell format for {cell_ref}: {format_result.get('msg')}")
+                            return False
+                    except:
+                        self.logger.warning(f"Failed to parse JSON response for {cell_ref}")
+                        return False
+            
+            self.logger.info(f"Successfully set format for cells: {cell_refs}")
+            return True
+            
+        except httpx.HTTPStatusError as e:
+            self.logger.error(f"HTTP error setting cell format: {str(e)}")
+            self.logger.error(f"Request info: {e.request}")
+            if e.response:
+                self.logger.error(f"Response info: {e.response}")
+                self.logger.error(f"Response text: {e.response.text}")
+            return False
+        except Exception as e:
+            self.logger.warning(f"Error setting cell format: {str(e)}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            # 即使格式设置失败，也不中断数据填充流程
+            return False
+    
+    def _cell_ref_to_row_index(self, cell_ref: str) -> int:
+        """
+        将单元格引用（如A1）转换为行索引（从0开始）
+        
+        Args:
+            cell_ref: 单元格引用，如"A1"
+            
+        Returns:
+            行索引
+        """
+        # 提取行号部分（数字）
+        row_part = ''.join(filter(str.isdigit, cell_ref))
+        return int(row_part) - 1  # 转换为0基索引
+    
+    def _cell_ref_to_col_index(self, cell_ref: str) -> int:
+        """
+        将单元格引用（如A1）转换为列索引（从0开始）
+        
+        Args:
+            cell_ref: 单元格引用，如"A1"
+            
+        Returns:
+            列索引
+        """
+        # 提取列号部分（字母）
+        col_part = ''.join(filter(str.isalpha, cell_ref.upper()))
+        
+        # 转换列为数字索引
+        col_index = 0
+        for char in col_part:
+            col_index = col_index * 26 + (ord(char) - ord('A'))
+        return col_index
     
     async def _fill_custom_data(self, spreadsheet_token: str, sheet_id: str, custom_fill_data: Dict[str, Any]) -> bool:
         """
