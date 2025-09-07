@@ -82,32 +82,32 @@ async def test_template_based_spreadsheet():
     try:
         # 测试基于模板创建电子表格
         print("Creating spreadsheet from template...")
-        spreadsheet_token = await agent._create_spreadsheet_from_template("测试模板表格")
+        spreadsheet_token, sheet_id = await agent._create_spreadsheet_from_template("测试模板表格")
         print(f"Successfully created spreadsheet from template: {spreadsheet_token}")
         
         # 测试数据填充
         test_outline_data = {
-            # "topic": "测试主题",
-            # "sections": [
-            #     {
-            #         "title": "测试章节1",
-            #         "content": "这是测试章节1的内容描述",
-            #         "images": ["图片1.jpg", "图片2.jpg"],
-            #         "word_count": 200
-            #     },
-            #     {
-            #         "title": "测试章节2",
-            #         "content": "这是测试章节2的内容描述",
-            #         "images": ["图片3.jpg"],
-            #         "word_count": 150
-            #     }
-            # ],
-            # "total_words": 350,
-            # "estimated_time": "3分钟"
+            "topic": "测试主题",
+            "sections": [
+                {
+                    "title": "测试章节1",
+                    "content": "这是测试章节1的内容描述",
+                    "images": ["图片1.jpg", "图片2.jpg"],
+                    "word_count": 200
+                },
+                {
+                    "title": "测试章节2",
+                    "content": "这是测试章节2的内容描述",
+                    "images": ["图片3.jpg"],
+                    "word_count": 150
+                }
+            ],
+            "total_words": 350,
+            "estimated_time": "3分钟"
         }
         
         print("Populating spreadsheet with test data...")
-        await agent._populate_spreadsheet_data(spreadsheet_token, test_outline_data)
+        await agent._populate_spreadsheet_data(spreadsheet_token, sheet_id, test_outline_data)
         print("Successfully populated spreadsheet with test data!")
         
     except Exception as e:

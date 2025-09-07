@@ -255,7 +255,7 @@ class GraphicOutlineAgent(BaseAgent):
             self.logger.info(f"Copy file request payload: {payload}")
             
             # 发送请求创建电子表格
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
                 response = await client.post(url, headers=headers, json=payload, timeout=self.timeout)
                 self.logger.info(f"Copy file response status code: {response.status_code}")
                 self.logger.info(f"Copy file response headers: {dict(response.headers)}")
@@ -293,6 +293,12 @@ class GraphicOutlineAgent(BaseAgent):
                 self.logger.info(f"Created Feishu spreadsheet from template with token: {spreadsheet_token} and sheet_id: {sheet_id}")
                 return spreadsheet_token, sheet_id
                 
+        except httpx.ConnectError as e:
+            self.logger.error(f"Connection error when creating Feishu spreadsheet from template: {str(e)}")
+            raise Exception(f"无法连接到飞书服务器，请检查网络连接: {str(e)}")
+        except httpx.TimeoutException as e:
+            self.logger.error(f"Timeout error when creating Feishu spreadsheet from template: {str(e)}")
+            raise Exception(f"请求飞书服务器超时，请检查网络连接: {str(e)}")
         except Exception as e:
             self.logger.error(f"Error creating Feishu spreadsheet from template: {str(e)}")
             raise
@@ -315,67 +321,17 @@ class GraphicOutlineAgent(BaseAgent):
             # 获取飞书访问令牌
             tenant_token = await self.feishu_client.get_tenant_access_token()
             
-            headers = {
-                "Authorization": f"Bearer {tenant_token}",
-                "Content-Type": "application/json; charset=utf-8"
+            # 准备要写入的数据（只写入特定单元格数据）
+            cell_data = {
+                "B1": "你好",  # 在B1单元格插入"你好"
+                "B2": "你好"  # 在B2单元格插入"你好"
             }
             
-            # 准备要写入的数据（只写入章节数据，不写入主题和空行）
-            values = []
+            # 使用fill_cells_in_sheet方法填充数据
+            result = await self.fill_cells_in_sheet(spreadsheet_token, sheet_id, cell_data)
             
-            # 添加章节数据（不添加主题行和空行，避免覆盖模板内容）
-            sections = outline_data.get("sections", [])
-            for i, section in enumerate(sections):
-                values.append([
-                    str(i + 1),  # 序号
-                    section.get("title", ""),  # 标题
-                    section.get("content", ""),  # 内容
-                    ", ".join(section.get("images", [])),  # 图片
-                    str(section.get("word_count", 0))  # 字数
-                ])
-            
-            # 只有当有数据时才执行写入操作
-            if values:
-                # 计算数据范围 (从A3开始写入，这是模板中通常的数据起始位置)
-                row_count = len(values)
-                col_count = max(len(row) for row in values) if values else 1
-                end_col = chr(64 + col_count) if col_count <= 26 else 'Z'
-                
-                # 写入数据到电子表格 (使用正确的API端点和范围格式)
-                write_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values"
-                write_payload = {
-                    "valueRange": {
-                        "range": f"{sheet_id}!A3:{end_col}{2 + row_count}",
-                        "values": values
-                    }
-                }
-                
-                self.logger.info(f"Writing data to spreadsheet with payload: {write_payload}")
-                
-                # 使用PUT方法
-                async with httpx.AsyncClient() as client:
-                    write_response = await client.put(write_url, headers=headers, json=write_payload, timeout=self.timeout)
-                    self.logger.info(f"Write API response status code: {write_response.status_code}")
-                    self.logger.info(f"Write API response headers: {dict(write_response.headers)}")
-                    self.logger.info(f"Write API response text: {write_response.text}")
-                    
-                    write_response.raise_for_status()
-                    write_result = write_response.json()
-                    
-                    self.logger.info(f"Write response: {write_result}")
-                    
-                    # 检查API返回的code，如果不为0则抛出异常
-                    if write_result.get("code") != 0:
-                        error_msg = f"Failed to write data to spreadsheet. API returned code: {write_result.get('code')}, message: {write_result.get('msg')}"
-                        self.logger.error(error_msg)
-                        # 根据错误码提供更具体的错误信息
-                        if write_result.get('code') == 99991666:
-                            self.logger.error("Possible permission issue: check if your Feishu app has the required permissions to write to spreadsheets")
-                        elif write_result.get('code') == 90202:
-                            self.logger.error("Range format error: check if the range format is correct")
-                        raise Exception(error_msg)
-            else:
-                self.logger.info("No data to write to spreadsheet")
+            if result.get("status") != "success":
+                raise Exception(f"Failed to fill cells: {result.get('error')}")
             
             self.logger.info(f"Successfully populated spreadsheet data for spreadsheet: {spreadsheet_token}")
             return True
