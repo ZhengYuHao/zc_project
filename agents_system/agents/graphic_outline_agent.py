@@ -14,7 +14,7 @@ from models.doubao import call_doubao
 from config.settings import settings
 from utils.logger import get_logger
 from utils.cell_filler import CellFiller
-from agents_system.utils.task_processor import task_processor
+from task_processor import task_processor
 
 
 class GraphicOutlineRequest(BaseModel):
