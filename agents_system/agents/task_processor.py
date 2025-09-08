@@ -114,13 +114,13 @@ class TaskProcessor:
         """
         # 根据任务名称和请求数据判断是否需要执行
         task_data_mapping = {
-            "target_audience_extractor": "topic",
-            "required_content_extractor": "requirements",
-            "blogger_style_extractor": "note_style",
-            "product_category_extractor": "product_name",
+            "target_audience_extractor": "product_highlights",
+            "required_content_extractor": "product_highlights",
+            "blogger_style_extractor": "blogger_link",
+            "product_category_extractor": "product_highlights",
             "selling_points_extractor": "product_highlights",
-            "product_endorsement_extractor": "blogger_link",
-            "topic_extractor": "topic"
+            "product_endorsement_extractor": "product_highlights",
+            "topic_extractor": "product_highlights"
         }
         
         required_field = task_data_mapping.get(task_name)
