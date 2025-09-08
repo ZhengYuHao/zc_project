@@ -1,102 +1,124 @@
 # Agents System
 
-一个基于Python、FastAPI和Pydantic的智能体集合项目。每个子智能体单独处理一类功能，通过统一的注册机制进行管理。
+一个基于Python、FastAPI和Pydantic的智能体集合项目，用于模块化管理多个子智能体，统一处理功能。
 
 ## 项目结构
 
 ```
 agents_system/
-├── agents/              # 各个智能体模块
-│   └── text_reviewer.py # 文本审稿智能体示例
-├── core/                # 核心模块
-│   ├── base_agent.py    # 智能体基类
-│   ├── registry.py      # 智能体注册机制
-│   └── feishu_callback.py # 飞书回调处理
-├── config/              # 配置模块
-│   └── settings.py      # 系统配置
-├── models/              # 大模型调用模块
-│   ├── llm.py           # 大模型接口
-│   └── feishu.py        # 飞书API客户端
-├── utils/               # 工具模块
-│   └── logger.py        # 统一日志模块
-├── main.py              # 应用入口
-├── requirements.txt     # 项目依赖
-└── .env                 # 环境变量配置
+├── agents/                 # 智能体实现目录
+│   ├── text_reviewer.py    # 文本审稿智能体
+│   └── graphic_outline_agent.py  # 图文大纲生成智能体
+├── config/                 # 配置文件目录
+│   └── settings.py         # 系统配置
+├── core/                   # 核心模块目录
+│   ├── base_agent.py       # 智能体基类
+│   ├── registry.py         # 智能体注册机制
+│   └── feishu_callback.py  # 飞书回调处理
+├── models/                 # 模型实现目录
+│   ├── doubao.py           # 豆包大模型调用接口
+│   ├── feishu.py           # 飞书API客户端
+│   └── llm.py              # 大模型调用接口
+├── utils/                  # 工具类目录
+│   ├── ac_automaton.py     # AC自动机实现
+│   ├── logger.py           # 日志模块
+│   └── xlsx_parser.py      # Excel解析器
+├── main.py                 # 项目入口文件
+└── test_graphic_outline.py # 图文大纲生成智能体测试脚本
 ```
 
-## 功能特点
+## 智能体介绍
 
-1. **模块化设计**：每个子智能体处理一类功能
-2. **统一注册机制**：新增智能体自动注册到系统中
-3. **统一日志模块**：包含模块名、行号、时间戳等信息
-4. **大模型调用模块**：统一处理大模型调用逻辑
-5. **统一配置管理**：系统配置集中管理
-6. **飞书集成**：支持通过飞书API导入数据处理并传回飞书
+### 1. 文本审稿智能体 (text_reviewer)
 
-## 快速开始
+用于处理文本中的错别字和语言逻辑问题。
+
+主要功能：
+- 文本错别字检测与纠正
+- 语言逻辑优化
+- 违禁词检测与替换
+- 飞书文档处理
+- 飞书消息处理
+
+API接口：
+- `POST /text_reviewer/review` - 文本审稿
+- `POST /text_reviewer/feishu/document` - 处理飞书文档
+- `POST /text_reviewer/feishu/message` - 处理飞书消息
+
+### 2. 图文大纲生成智能体 (graphic_outline)
+
+用于生成图文内容的大纲并创建飞书电子表格。
+
+主要功能：
+- 调用大模型生成图文内容大纲
+- 创建飞书电子表格
+- 将大纲数据填充到电子表格中
+
+API接口：
+- `POST /graphic_outline/generate` - 生成图文大纲
+- `POST /graphic_outline/feishu/sheet` - 创建飞书电子表格
+
+工作流程：
+1. 接收用户请求（主题、要求、风格等）
+2. 调用大模型生成详细的大纲数据
+3. 创建飞书电子表格
+4. 将大纲数据结构化并填充到电子表格中
+5. 返回电子表格链接和相关数据
+
+## 环境配置
 
 1. 安装依赖：
-   ```
+   ```bash
    pip install -r requirements.txt
    ```
 
 2. 配置环境变量：
    创建 `.env` 文件并配置相关参数：
-   - Qwen API密钥
-   - 飞书应用凭证（App ID, App Secret等）
-
-3. 运行应用：
    ```
-   python main.py
+   # 项目配置
+   PROJECT_NAME=Agents System
+   PROJECT_VERSION=1.0.0
+   DEBUG=True
+   
+   # 豆包大模型配置
+   DOUBAO_API_KEY=your_doubao_api_key
+   DOUBAO_MODEL_NAME=your_doubao_model_name
+   
+   # 飞书配置
+   FEISHU_APP_ID=your_feishu_app_id
+   FEISHU_APP_SECRET=your_feishu_app_secret
+   FEISHU_VERIFY_TOKEN=your_feishu_verify_token
+   FEISHU_ENCRYPT_KEY=your_feishu_encrypt_key
+   
+   # 日志配置
+   LOG_LEVEL=INFO
+   LOG_FILE=logs/agents_system.log
    ```
 
-## API接口
+## 运行项目
 
-- `GET /` - 根路径，显示系统信息
-- `GET /health` - 健康检查
-- `GET /agents/text_reviewer/info` - 获取文本审稿智能体信息
-- `POST /agents/text_reviewer/review` - 文本审稿
-- `POST /agents/text_reviewer/feishu/document` - 处理飞书文档
-- `POST /agents/text_reviewer/feishu/message` - 处理飞书消息
-- `POST /feishu/callback` - 飞书事件回调接口
+```bash
+python main.py
+```
 
-## 飞书集成
+## 测试智能体
 
-系统支持通过飞书API进行数据处理，包括：
+### 测试图文大纲生成智能体
 
-1. 读取飞书文档内容并进行文本审稿
-2. 处理飞书消息并回复处理结果
-3. 接收飞书事件回调并自动处理
+```bash
+python test_graphic_outline.py
+```
 
-### 配置飞书集成
+## API文档
 
-在 `.env` 文件中配置以下参数：
-- `FEISHU_APP_ID`: 飞书应用ID
-- `FEISHU_APP_SECRET`: 飞书应用密钥
-- `FEISHU_VERIFY_TOKEN`: 飞书验证令牌（可选）
-- `FEISHU_ENCRYPT_KEY`: 飞书加密密钥（可选）
+项目运行后，可通过以下地址访问API文档：
 
-## 智能体开发
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
 
-要创建新的智能体：
+## 开发新智能体
 
 1. 在 `agents/` 目录下创建新的智能体文件
-2. 继承 [BaseAgent](file:///D:/python_codes/zc_project/agents_system/core/base_agent.py#L7-L35) 基类
-3. 实现 [process()](file:///D:/python_codes/zc_project/agents_system/core/base_agent.py#L24-L35) 方法
-4. 在 [main.py](file:///D:/python_codes/zc_project/agents_system/main.py) 中注册智能体
-
-## 配置说明
-
-通过 [settings.py](file:///D:/python_codes/zc_project/agents_system/config/settings.py) 文件或环境变量配置系统：
-
-- `PROJECT_NAME`: 项目名称
-- `PROJECT_VERSION`: 项目版本
-- `DEBUG`: 调试模式
-- `QWEN_API_KEY`: Qwen API密钥
-- `QWEN_MODEL_NAME`: Qwen模型名称
-- `LOG_LEVEL`: 日志级别
-- `LOG_FILE`: 日志文件路径
-- `FEISHU_APP_ID`: 飞书应用ID
-- `FEISHU_APP_SECRET`: 飞书应用密钥
-- `FEISHU_VERIFY_TOKEN`: 飞书验证令牌
-- `FEISHU_ENCRYPT_KEY`: 飞书加密密钥
+2. 继承 `BaseAgent` 基类并实现抽象方法
+3. 在 `main.py` 中注册新智能体
+4. 实现具体业务逻辑

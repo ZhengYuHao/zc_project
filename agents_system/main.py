@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from config.settings import settings
 from core.registry import registry
 from agents.text_reviewer import TextReviewerAgent
+from agents.graphic_outline_agent import GraphicOutlineAgent
 from core.feishu_callback import router as feishu_router
 from utils.logger import get_logger
 
@@ -32,10 +33,13 @@ app.add_middleware(
 
 # 注册智能体
 text_reviewer = TextReviewerAgent()
+graphic_outline = GraphicOutlineAgent()
 registry.register("text_reviewer", TextReviewerAgent)
+registry.register("graphic_outline", GraphicOutlineAgent)
 
 # 将智能体路由添加到应用
 app.include_router(text_reviewer.router)
+app.include_router(graphic_outline.router)
 # 添加飞书回调路由
 app.include_router(feishu_router)
 
@@ -50,9 +54,14 @@ async def root():
 
 @app.get("/health")
 async def health_check():
+    """健康检查端点"""
     return {"status": "healthy"}
 
 if __name__ == "__main__":
     import uvicorn
-    logger.info("Starting Agents System")
-    uvicorn.run("main:app", host="0.0.0.0", port=8848, reload=True)
+    uvicorn.run(
+        "main:app",
+        host=settings.HOST,
+        port=settings.PORT,
+        reload=settings.DEBUG
+    )
