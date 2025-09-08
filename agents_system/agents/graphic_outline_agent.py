@@ -14,7 +14,7 @@ from models.doubao import call_doubao
 from config.settings import settings
 from utils.logger import get_logger
 from utils.cell_filler import CellFiller
-from task_processor import task_processor
+from agents.task_processor import task_processor
 
 
 class GraphicOutlineRequest(BaseModel):
@@ -718,92 +718,52 @@ class GraphicOutlineAgent(BaseAgent):
             "requirements": request_data.get("requirements", ""),
             "direction": request_data.get("direction", ""),
             "blogger_link": request_data.get("blogger_link", ""),
-            "sections": [],  # 可以根据处理结果生成具体章节
+            "sections": {},  # 使用字典映射方式存储
             "total_words": 0,
             "estimated_time": "5分钟"
         }
         
         # 根据任务结果生成大纲章节
-        sections = []
+        sections = {}
         
         # 添加目标人群分析章节
         if "target_audience_extractor" in aggregated_data:
             audience_data = aggregated_data["target_audience_extractor"]
-            sections.append({
-                "title": "目标人群分析",
-                "content": audience_data.get("target_audience", ""),
-                "word_count": len(audience_data.get("target_audience", ""))
-            })
+            sections["target_audience"] = audience_data.get("target_audience", "")
         
         # 添加必提内容章节
         if "required_content_extractor" in aggregated_data:
             content_data = aggregated_data["required_content_extractor"]
-            sections.append({
-                "title": "必提内容",
-                "content": content_data.get("required_content", ""),
-                "word_count": len(content_data.get("required_content", ""))
-            })
+            sections["required_content"] = content_data.get("required_content", "")
         
         # 添加达人风格理解章节
         if "blogger_style_extractor" in aggregated_data:
             style_data = aggregated_data["blogger_style_extractor"]
-            sections.append({
-                "title": "达人风格理解",
-                "content": style_data.get("blogger_style", ""),
-                "word_count": len(style_data.get("blogger_style", ""))
-            })
+            sections["blogger_style"] = style_data.get("blogger_style", "")
         
         # 添加产品品类章节
         if "product_category_extractor" in aggregated_data:
             category_data = aggregated_data["product_category_extractor"]
-            sections.append({
-                "title": "产品品类分析",
-                "content": category_data.get("product_category", ""),
-                "word_count": len(category_data.get("product_category", ""))
-            })
+            sections["product_category"] = category_data.get("product_category", "")
         
         # 添加卖点章节
         if "selling_points_extractor" in aggregated_data:
             selling_points_data = aggregated_data["selling_points_extractor"]
-            sections.append({
-                "title": "核心卖点",
-                "content": selling_points_data.get("selling_points", ""),
-                "word_count": len(selling_points_data.get("selling_points", ""))
-            })
+            sections["selling_points"] = selling_points_data.get("selling_points", "")
         
         # 添加产品背书章节
         if "product_endorsement_extractor" in aggregated_data:
             endorsement_data = aggregated_data["product_endorsement_extractor"]
-            sections.append({
-                "title": "产品背书",
-                "content": f"背书类型: {endorsement_data.get('endorsement_type', '')}",
-                "word_count": len(endorsement_data.get("endorsement_type", ""))
-            })
+            sections["product_endorsement"] = endorsement_data.get("endorsement_type", "")
         
         # 添加话题章节
         if "topic_extractor" in aggregated_data:
             topic_data = aggregated_data["topic_extractor"]
-            sections.append({
-                "title": "话题分析",
-                "content": f"主话题: {topic_data.get('main_topic', '')}",
-                "word_count": len(topic_data.get("main_topic", ""))
-            })
+            sections["main_topic"] = topic_data.get("main_topic", "")
         
-        # 添加其他章节
-        sections.append({
-            "title": "内容大纲",
-            "content": "根据分析结果生成的详细内容大纲",
-            "word_count": 100
-        })
-        
-        sections.append({
-            "title": "创作建议",
-            "content": "针对该主题和产品的创作建议",
-            "word_count": 80
-        })
         
         processed_outline["sections"] = sections
-        processed_outline["total_words"] = sum(section["word_count"] for section in sections)
+        processed_outline["total_words"] = sum(len(str(content)) for content in sections.values())
         
         self.logger.info("Successfully aggregated and processed task results")
         return processed_outline
