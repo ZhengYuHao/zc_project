@@ -120,19 +120,66 @@ async def test_task_processor():
     # 测试数据聚合和处理
     print("Testing data aggregation and processing...")
     
+    # try:
+    #     # 创建GraphicOutlineAgent实例以访问_aggregate_and_process方法
+    #     agent = GraphicOutlineAgent()
+    #     # 使用真实的_aggregate_and_process方法
+    #     aggregated_result = await agent._aggregate_and_process(results, test_request)
+    #     print(f"Aggregated result: {aggregated_result}")
+    #     print(f"Total sections: {len(aggregated_result.get('sections', {}))}")
+    #     if 'sections' in aggregated_result and isinstance(aggregated_result['sections'], dict):
+    #         sections = aggregated_result['sections']
+    #         for section_name, section_content in sections.items():
+    #             print(f"  Section '{section_name}': {section_content}")
+    # except Exception as e:
+    #     print(f"Error in data aggregation and processing: {e}")
+    #     import traceback
+    #     traceback.print_exc()
+    
+    # print("\n" + "="*50)
+    
+    # # 测试图文规划生成逻辑
+    # print("Testing planting content generation...")
+    
     try:
-        # 创建GraphicOutlineAgent实例以访问_aggregate_and_process方法
+        # 创建GraphicOutlineAgent实例以访问_generate_planting_content方法
         agent = GraphicOutlineAgent()
-        # 使用真实的_aggregate_and_process方法
-        aggregated_result = await agent._aggregate_and_process(results, test_request)
-        print(f"Aggregated result: {aggregated_result}")
-        print(f"Total sections: {len(aggregated_result.get('sections', {}))}")
-        if 'sections' in aggregated_result and isinstance(aggregated_result['sections'], dict):
-            sections = aggregated_result['sections']
-            for section_name, section_content in sections.items():
-                print(f"  Section '{section_name}': {section_content}")
+        
+        # 准备测试数据
+        processed_data = {
+            "topic": "夏季护肤指南",
+            "product_name": "水润防晒霜",
+            "product_highlights": "防晒、保湿、温和配方",
+            "note_style": "种草",
+            "requirements": "需要包含使用前后对比，适合敏感肌",
+            "direction": "重点介绍防晒效果和使用感受",
+            "blogger_link": "https://xiaohongshu.com/user/12345",
+            "sections": {
+                "target_audience": "适合户外活动较多的年轻女性",
+                "required_content": "需要展示防晒效果和使用感受",
+                "blogger_style": "小红书风格，轻松活泼",    
+                "product_category": "护肤品",
+                "selling_points": "防晒指数高，温和不刺激，保湿效果好",
+                "product_endorsement": "专业护肤品牌",
+                "main_topic": "夏季防晒的重要性"
+            },
+            "total_words": 1000,
+            "estimated_time": "5分钟"
+        }
+        
+        # 测试种草图文规划生成
+        planting_content = await agent._generate_planting_content(processed_data)
+        print("Generated planting content:")
+        print(planting_content[:-1] + "..." if len(planting_content) > 500 else planting_content)
+        
+        # 测试图文规划(测试)模式
+        processed_data["note_style"] = "图文规划(测试)"
+        planting_content_test = await agent._generate_planting_content(processed_data)
+        print("\nGenerated planting content (test mode):")
+        print(planting_content_test[:-1])
+        
     except Exception as e:
-        print(f"Error in data aggregation and processing: {e}")
+        print(f"Error in planting content generation: {e}")
         import traceback
         traceback.print_exc()
     

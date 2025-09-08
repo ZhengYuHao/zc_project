@@ -616,7 +616,7 @@ class GraphicOutlineAgent(BaseAgent):
         Args:
             spreadsheet_token: 电子表格token
             sheet_id: 工作表ID
-            cell_data: 单元格数据，格式 {"A1": "值1", "B2": "值2"}
+            cell_data: 单元格数据，格式 {"A1": "值1", "B2": "값2"}
             
         Returns:
             处理结果，包含状态和消息的字典
@@ -669,7 +669,9 @@ class GraphicOutlineAgent(BaseAgent):
                 planting_content = await self._generate_planting_content(processed_data)
                 processed_data["planting_content"] = planting_content
             else:
-                processed_data["note_style"] = "其他"
+                # 处理图文规划(测试)的工作
+                planting_content = await self._generate_planting_content(processed_data)
+                processed_data["planting_content"] = planting_content
 
             
             
@@ -792,18 +794,25 @@ class GraphicOutlineAgent(BaseAgent):
             # 获取相关信息
             product_name = processed_data.get("product_name", "")
             product_highlights = processed_data.get("product_highlights", "")
-            target_audience = processed_data.get("target_audience", "")
+            target_audience = ""
             blogger_style = processed_data.get("note_style", "")
-            selling_points = processed_data.get("selling_points", "")
-            product_category = processed_data.get("product_category", "")
+            selling_points = ""
+            product_category = ""
             requirements = processed_data.get("requirements", "")
             
             # 从sections中提取目标人群和卖点信息
             sections = processed_data.get("sections", {})
+            content_requirement = ""
+            endorsement = ""
+            output = ""
+            
             if isinstance(sections, dict):
                 target_audience = sections.get("target_audience", "")
                 selling_points = sections.get("selling_points", "")
                 product_category = sections.get("product_category", "")
+                content_requirement = sections.get("required_content", "")
+                endorsement = sections.get("product_endorsement", "")
+                output = sections.get("output", "")
             
             # 构建系统提示词
             system_prompt = f"""### 角色
@@ -928,13 +937,16 @@ XX（图片的文字内容）
 3. 图文规划是"静态"的，不涉及动作过程或时间推进。
 4. 不能写成"视频分镜脚本"，不要出现"随后""过一会儿""开始""打开"等动态词。
 5. 每张图片是一个独立的定格画面，而不是连续的故事。
-【创作要求】：{{requirements}}
-【内容方向建议】：{{content_requirement}}
-【卖点】：{{selling_point}}
-【产品名称】：{{product_name}}
-【产品背书】：{{endorsement}}
-【产品品类】：{{Productcategory}}
-【必提内容、注意事项】：{{output}}
+
+
+## 创作要求
+- 核心要求：{requirements}
+- 产品卖点：{selling_points}
+- 内容方向：{content_requirement}
+- 产品背书：{endorsement}
+- 必提内容：{output}
+
+
 """
             
             # 使用用户提示词或系统提示词
