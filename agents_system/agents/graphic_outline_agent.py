@@ -668,6 +668,7 @@ class GraphicOutlineAgent(BaseAgent):
                 # 调用豆包大模型生成种草图文规划
                 planting_content = await self._generate_planting_content(processed_data)
                 processed_data["planting_content"] = planting_content
+                
             else:
                 # 处理图文规划(测试)的工作
                 planting_content = await self._generate_planting_content(processed_data)

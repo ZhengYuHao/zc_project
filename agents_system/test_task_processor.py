@@ -170,13 +170,13 @@ async def test_task_processor():
         # 测试种草图文规划生成
         planting_content = await agent._generate_planting_content(processed_data)
         print("Generated planting content:")
-        print(planting_content[:-1] + "..." if len(planting_content) > 500 else planting_content)
+        print(planting_content[:-1] )
         
         # 测试图文规划(测试)模式
-        processed_data["note_style"] = "图文规划(测试)"
-        planting_content_test = await agent._generate_planting_content(processed_data)
-        print("\nGenerated planting content (test mode):")
-        print(planting_content_test[:-1])
+        # processed_data["note_style"] = "图文规划(测试)"
+        # planting_content_test = await agent._generate_planting_content(processed_data)
+        # print("\nGenerated planting content (test mode):")
+        # print(planting_content_test[:-1])
         
     except Exception as e:
         print(f"Error in planting content generation: {e}")
