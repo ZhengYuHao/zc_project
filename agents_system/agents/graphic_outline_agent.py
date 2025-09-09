@@ -669,12 +669,26 @@ class GraphicOutlineAgent(BaseAgent):
                 planting_content = await self._generate_planting_content(processed_data)
                 processed_data["planting_content"] = planting_content
                 
+                # 生成种草配文
+                planting_captions = await self._generate_planting_captions(processed_data, planting_content)
+                processed_data["planting_captions"] = planting_captions
+                
+                # 生成格式统一的输出
+                formatted_output = await self._generate_formatted_output(processed_data, planting_content, planting_captions)
+                processed_data["formatted_output"] = formatted_output
             else:
                 # 处理图文规划(测试)的工作
                 planting_content = await self._generate_planting_content(processed_data)
                 processed_data["planting_content"] = planting_content
-
-            
+                processed_data["note_style"] = "图文规划(测试)"
+                
+                # 生成种草配文
+                planting_captions = await self._generate_planting_captions(processed_data, planting_content)
+                processed_data["planting_captions"] = planting_captions
+                
+                # 生成格式统一的输出
+                formatted_output = await self._generate_formatted_output(processed_data, planting_content, planting_captions)
+                processed_data["formatted_output"] = formatted_output
             
             # 创建飞书电子表格
             spreadsheet_result = await self.create_feishu_sheet({
@@ -780,6 +794,177 @@ class GraphicOutlineAgent(BaseAgent):
         self.logger.info("Successfully aggregated and processed task results")
         return processed_outline
     
+    async def _generate_formatted_output(self, processed_data: Dict[str, Any], planting_content: str, planting_captions: str, user_prompt: Optional[str] = None) -> str:
+        """
+        生成格式统一的输出内容，包含图文规划和配文
+        
+        Args:
+            processed_data: 处理后的数据
+            planting_content: 图文规划内容
+            planting_captions: 配文内容
+            user_prompt: 用户自定义提示词（可选）
+            
+        Returns:
+            格式统一的输出内容
+        """
+        try:
+            # 获取相关信息
+            product_name = processed_data.get("product_name", "")
+            product_highlights = processed_data.get("product_highlights", "")
+            target_audience = ""
+            blogger_style = processed_data.get("note_style", "")
+            selling_points = ""
+            product_category = ""
+            requirements = processed_data.get("requirements", "")
+            
+            # 从sections中提取目标人群和卖点信息
+            sections = processed_data.get("sections", {})
+            content_requirement = ""
+            endorsement = ""
+            output = ""
+            
+            if isinstance(sections, dict):
+                target_audience = sections.get("target_audience", "")
+                selling_points = sections.get("selling_points", "")
+                product_category = sections.get("product_category", "")
+                content_requirement = sections.get("required_content", "")
+                endorsement = sections.get("product_endorsement", "")
+                main_topic = sections.get("main_topic", "")
+            
+            # 构建系统提示词
+            system_prompt = f"""## 任务
+接收配文、图文规划、话题，按照要求格式正确输出
+
+## 强制输出格式和内容（配文{planting_captions}、图文规划[{planting_content}]、话题填写到对应的位置，其它内容以空白形式填写）
+**账号名称**
+
+**主页链接**
+
+**发布时间**
+
+**合作形式**
+
+**内容主题方向**            
+
+**图片数量**
+供选图（15）张，发布（9）张
+**发布配文**
+
+**发布话题**
+
+**🔺拍摄注意事项，需仔细阅读**
+1.光线问题：不要逆光拍摄！拍出来素材不可用，补拍风险极高，整体画面需呈现明亮感
+2.素材数量：素材尽可能多拍多拍多拍！后期调整起来方便，也避免进行补拍，节省双方时间
+3.画面清晰：其中特写镜头产品一定要拍的清晰，近景镜头也要清晰一些，不可以模糊虚焦。
+
+
+2. 仅“配文”“图文规划”2个字段填写对应内容（`{planting_content}`填图文规划，`{planting_captions}`填配文），图文规划的图片类型、图片规划、备注是3列要填写在对应位置；{main_topic}填发布话题）
+3. 其余字段的第二列留空，不填任何信息；
+4. 确保表格整洁、易读，符合标准 Markdown 语法。
+"""
+            
+            # 使用用户提示词或系统提示词
+            prompt = user_prompt if user_prompt else system_prompt
+            
+            from models.doubao import call_doubao
+            formatted_output = await call_doubao(prompt)
+            return formatted_output
+            
+        except Exception as e:
+            self.logger.error(f"Error generating formatted output: {str(e)}")
+            return "格式化输出生成失败"
+
+    async def _generate_planting_captions(self, processed_data: Dict[str, Any], planting_content: str, user_prompt: Optional[str] = None) -> str:
+        """
+        生成种草图文的配文内容
+        
+        Args:
+            processed_data: 处理后的数据
+            planting_content: 已生成的图文规划内容
+            user_prompt: 用户自定义提示词（可选）
+            
+        Returns:
+            生成的配文内容
+        """
+        try:
+            # 获取相关信息
+            product_name = processed_data.get("product_name", "")
+            product_highlights = processed_data.get("product_highlights", "")
+            target_audience = ""
+            blogger_style = processed_data.get("note_style", "")
+            selling_points = ""
+            product_category = ""
+            requirements = processed_data.get("requirements", "")
+            
+            # 从sections中提取目标人群和卖点信息
+            sections = processed_data.get("sections", {})
+            content_requirement = ""
+            endorsement = ""
+            output = ""
+            
+            if isinstance(sections, dict):
+                target_audience = sections.get("target_audience", "")
+                selling_points = sections.get("selling_points", "")
+                product_category = sections.get("product_category", "")
+                content_requirement = sections.get("required_content", "")
+                endorsement = sections.get("product_endorsement", "")
+                output = planting_content
+            
+            # 构建系统提示词
+            system_prompt = f"""# 角色
+你是一个专业的小红书与抖音笔记的配文创作者。擅长根据图文规划、创作要求、产品卖点、达人风格创作配文。
+配文：笔记的文案
+# 输入
+【创作要求】：{requirements}
+【内容方向建议】：{content_requirement}
+【卖点】：{selling_points}
+【达人风格】：{blogger_style}
+【图片规划】：{output}
+
+【产品名称】：{product_name}
+【产品背书】：{endorsement}
+【产品品类】：{product_category}
+【图片规划】：{output}
+
+## 全局要求
+使用真实自然的第一人称叙述风格，语言生动亲切，体现真实使用感受
+1. **引入不生硬**：不说“今天我要推荐XX”，而是“我在做XX时发现了XX”。
+2. **种草不夸张**：用“我觉得”“试了下”“居然”等词弱化广告感，重点描述“场景里的体验”（比如“挂在推车上不晃”比“质量好”更具体）。
+3. **收尾不强迫**：引导像“顺手分享”，甚至可以不分享，比如“可以试试”，而非“赶紧买”。
+
+## 禁止话术
+不使用 “家人们”“宝子”“铁子” 等特定称呼
+
+### 技能
+1. 理解图片规划的内容，按照图片规划的创作结构创作配文
+
+2. 创作配文
+理解提供的产品创作要求，内容方向建议，达人风格，卖点，必提内容
+核心依据：按照图片规划的创作结构创作配文，配文可以适当关联图片的内容
+风格适配：配文的语言风格、内容呈现方式、表达逻辑等需与达人的风格相似
+卖点融合：配文需自然的融合卖点
+创作要求落地：配文要遵守创作要求
+
+* 配文结构：标题、正文、收尾。
+
+## 强制输出格式要求
+**一、笔记配文**
+- **标题**：生成5个富有创意且吸引力的标题，巧妙融入emoji表情，提升趣味性和点击率，**字数控制在20字以内**。
+- **正文**：严格按照指定的创作结构撰写，正文内容需基于真实数据和专业分析，风格自然可信。避免镜头语言和剧本式表述。不含价格信息或门店推荐（除非【创作要求】提及）。巧妙融入少量emoji表情。**全文控制在800字以内**。
+- **标签**：输出【产品卖点】中要求的必带话题，同时输出3-4个符合规范的标签，包含主话题、精准话题、流量话题。
+"""
+            
+            # 使用用户提示词或系统提示词
+            prompt = user_prompt if user_prompt else system_prompt
+            
+            from models.doubao import call_doubao
+            captions_content = await call_doubao(prompt)
+            return captions_content
+            
+        except Exception as e:
+            self.logger.error(f"Error generating planting captions: {str(e)}")
+            return "种草配文生成失败"
+
     async def _generate_planting_content(self, processed_data: Dict[str, Any], user_prompt: Optional[str] = None) -> str:
         """
         生成种草图文规划内容
@@ -888,7 +1073,7 @@ class GraphicOutlineAgent(BaseAgent):
 - 适用内容类型：科普背书、产品验证。
 - 适配标题风格：事实冲击式 / 避坑式。
 11.RIDE结构
-- 框架公式：风险/痛点 →兴趣 → 差异→ 效果
+- 框架公式：风险/痛点 → 兴趣 → 差异→ 效果
 - 示例文案：秋冬如果不用加湿器（风险）→ 皮肤容易干痒、喉咙刺痛（风险）→ 我买的XX加湿器可以一晚无雾加湿（利益）→ 比普通加湿器更静音还省电（差异）→ 用了一周，房间再也不干燥了（效果）。
 - 适用内容类型：家居电器、健康产品。
 - 适配标题风格：痛点式 / 对比式 / 种草式。

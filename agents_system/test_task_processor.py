@@ -26,120 +26,82 @@ try:
         extract_topic
     )
     from agents.graphic_outline_agent import GraphicOutlineAgent
+    from utils.logger import get_logger
 except ImportError as e:
     print(f"ImportError: {e}")
     raise
 
+# 获取logger实例
+logger = get_logger("test.task_processor")
+
 
 async def test_task_processor():
     """测试任务处理器"""
-    print("Testing Task Processor...")
+    # logger.info("Testing Task Processor...")
     
-    # 测试数据
-    test_request = {
-        "topic": "夏季护肤指南",
-        "product_highlights": "防晒、保湿、温和配方",
-        "note_style": "小红书风格，轻松活泼",
-        "product_name": "水润防晒霜",
-        "direction": "重点介绍防晒效果和使用感受",
-        "blogger_link": "https://xiaohongshu.com/user/12345",
-        "requirements": "需要包含使用前后对比，适合敏感肌",
-        "style": "活泼"
-    }
+    # # 测试数据
+    # test_request = {
+    #     "topic": "夏季护肤指南",
+    #     "product_highlights": "防晒、保湿、温和配方",
+    #     "note_style": "种草",
+    #     "product_name": "水润防晒霜",
+    #     "direction": "重点介绍防晒效果和使用感受",
+    #     "blogger_link": "https://xiaohongshu.com/user/12345",
+    #     "requirements": "需要包含使用前后对比，适合敏感肌",
+    #     "style": "活泼"
+    # }
     
-    print("Test request data:")
-    for key, value in test_request.items():
-        print(f"  {key}: {value}")
+    # logger.info("Test request data:")
+    # for key, value in test_request.items():
+    #     logger.info(f"  {key}: {value}")
     
-    print("\n" + "="*50)
+    # logger.info("="*50)
     
-    # 测试单个任务处理函数
-    print("Testing individual task functions...")
+    # # 测试单个任务处理函数
+    # logger.info("Testing individual task functions...")
     
-    # try:
-    #     target_audience_result = await extract_target_audience(test_request)
-    #     print(f"Target audience result: {target_audience_result}")
-    # except Exception as e:
-    #     print(f"Error in extract_target_audience: {e}")
+    # logger.info("="*50)
     
-    # try:
-    #     required_content_result = await extract_required_content(test_request)
-    #     print(f"Required content result: {required_content_result}")
-    # except Exception as e:
-    #     print(f"Error in extract_required_content: {e}")
+    # # 测试并发任务执行
+    # logger.info("Testing concurrent task execution...")
     
     # try:
-    #     blogger_style_result = await extract_blogger_style(test_request)
-    #     print(f"Blogger style result: {blogger_style_result}")
+    #     results = await task_processor.execute_tasks(test_request)
+    #     logger.info(f"Concurrent task execution results:{results}")
+    #     for task_name, result in results.items():
+    #         logger.info(f"  {task_name}: {result['status']}")
+    #         if result['status'] == 'success':
+    #             logger.info(f"    Data: {result['data']}")
+    #         else:
+    #             logger.error(f"    Error: {result['error']}")
     # except Exception as e:
-    #     print(f"Error in extract_blogger_style: {e}")
+    #     logger.error(f"Error in concurrent task execution: {e}")
     
-    # try:
-    #     product_category_result = await extract_product_category(test_request)
-    #     print(f"Product category result: {product_category_result}")
-    # except Exception as e:
-    #     print(f"Error in extract_product_category: {e}")
+    # logger.info("="*50)
     
-    # try:
-    #     selling_points_result = await extract_selling_points(test_request)
-    #     print(f"Selling points result: {selling_points_result}")
-    # except Exception as e:
-    #     print(f"Error in extract_selling_points: {e}")
-    
-    # try:
-    #     product_endorsement_result = await extract_product_endorsement(test_request)
-    #     print(f"Product endorsement result: {product_endorsement_result}")
-    # except Exception as e:
-    #     print(f"Error in extract_product_endorsement: {e}")
-    
-    # try:
-    #     topic_result = await extract_topic(test_request)
-    #     print(f"Topic result: {topic_result}")
-    # except Exception as e:
-    #     print(f"Error in extract_topic: {e}")
-    
-    print("\n" + "="*50)
-    
-    # 测试并发任务执行
-    print("Testing concurrent task execution...")
-    
-    try:
-        results = await task_processor.execute_tasks(test_request)
-        print(f"Concurrent task execution results:{results}")
-        for task_name, result in results.items():
-            print(f"  {task_name}: {result['status']}")
-            if result['status'] == 'success':
-                print(f"    Data: {result['data']}")
-            else:
-                print(f"    Error: {result['error']}")
-    except Exception as e:
-        print(f"Error in concurrent task execution: {e}")
-    
-    print("\n" + "="*50)
-    
-    # 测试数据聚合和处理
-    print("Testing data aggregation and processing...")
+    # # 测试数据聚合和处理
+    # logger.info("Testing data aggregation and processing...")
     
     # try:
     #     # 创建GraphicOutlineAgent实例以访问_aggregate_and_process方法
     #     agent = GraphicOutlineAgent()
     #     # 使用真实的_aggregate_and_process方法
     #     aggregated_result = await agent._aggregate_and_process(results, test_request)
-    #     print(f"Aggregated result: {aggregated_result}")
-    #     print(f"Total sections: {len(aggregated_result.get('sections', {}))}")
+    #     logger.info(f"Aggregated result: {aggregated_result}")
+    #     logger.info(f"Total sections: {len(aggregated_result.get('sections', {}))}")
     #     if 'sections' in aggregated_result and isinstance(aggregated_result['sections'], dict):
     #         sections = aggregated_result['sections']
     #         for section_name, section_content in sections.items():
-    #             print(f"  Section '{section_name}': {section_content}")
+    #             logger.info(f"  Section '{section_name}': {section_content}")
     # except Exception as e:
-    #     print(f"Error in data aggregation and processing: {e}")
+    #     logger.error(f"Error in data aggregation and processing: {e}")
     #     import traceback
-    #     traceback.print_exc()
+    #     logger.error(traceback.format_exc())
     
-    # print("\n" + "="*50)
+    # logger.info("="*50)
     
     # # 测试图文规划生成逻辑
-    # print("Testing planting content generation...")
+    # logger.info("Testing planting content generation...")
     
     try:
         # 创建GraphicOutlineAgent实例以访问_generate_planting_content方法
@@ -157,7 +119,7 @@ async def test_task_processor():
             "sections": {
                 "target_audience": "适合户外活动较多的年轻女性",
                 "required_content": "需要展示防晒效果和使用感受",
-                "blogger_style": "小红书风格，轻松活泼",    
+                "blogger_style": "小红书风格，轻松活泼",
                 "product_category": "护肤品",
                 "selling_points": "防晒指数高，温和不刺激，保湿效果好",
                 "product_endorsement": "专业护肤品牌",
@@ -167,23 +129,48 @@ async def test_task_processor():
             "estimated_time": "5分钟"
         }
         
-        # 测试种草图文规划生成
-        planting_content = await agent._generate_planting_content(processed_data)
-        print("Generated planting content:")
-        print(planting_content[:-1] )
+        # # 测试种草图文规划生成
+        # planting_content = await agent._generate_planting_content(processed_data)
+        # logger.info("Generated planting content:")
+        # logger.info(planting_content[:-1])
+
         
-        # 测试图文规划(测试)模式
-        # processed_data["note_style"] = "图文规划(测试)"
+        # # 测试图文规划(测试)模式下的配文生成
+        # planting_captions_test = await agent._generate_planting_captions(processed_data, planting_content)
+        # logger.info("\nGenerated planting captions (test mode):")
+        # logger.info(planting_captions_test[:-1])
+        
+        # # 测试图文规划(测试)模式下的格式统一输出生成
         # planting_content_test = await agent._generate_planting_content(processed_data)
-        # print("\nGenerated planting content (test mode):")
-        # print(planting_content_test[:-1])
+        # formatted_output_test = await agent._generate_formatted_output(processed_data, planting_content_test, planting_captions_test)
+        # logger.info("\nGenerated formatted output (test mode):")
+        # logger.info(formatted_output_test[:1000] + "..." if len(formatted_output_test) > 1000 else formatted_output_test)
+        
+        # # 完整流程测试 - 从图文规划到配文再到格式化输出
+        # logger.info("\n" + "="*50)
+        # logger.info("Testing complete workflow: planting content -> captions -> formatted output")
+        
+        # 使用"种草"模式进行完整流程测试
+        processed_data["note_style"] = "种草"
+        complete_planting_content = await agent._generate_planting_content(processed_data)
+        complete_planting_captions = await agent._generate_planting_captions(processed_data, complete_planting_content)
+        complete_formatted_output = await agent._generate_formatted_output(processed_data, complete_planting_content, complete_planting_captions)
+        
+        logger.info("Complete workflow test results:")
+        logger.info(f"1. Planting content generated: {len(complete_planting_content) > 0}")
+        logger.info(f"2. Planting captions generated: {len(complete_planting_captions) > 0}")
+        logger.info(f"3. Formatted output generated: {len(complete_formatted_output) > 0}")
+        
+        if len(complete_formatted_output) > 0:
+            logger.info("Sample of formatted output:")
+            logger.info(complete_formatted_output[:-1])
         
     except Exception as e:
-        print(f"Error in planting content generation: {e}")
+        logger.error(f"Error in planting content generation: {e}")
         import traceback
-        traceback.print_exc()
+        logger.error(traceback.format_exc())
     
-    print("\nTest completed!")
+    logger.info("Test completed!")
 
 
 if __name__ == "__main__":
