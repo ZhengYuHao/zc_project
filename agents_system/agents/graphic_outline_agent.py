@@ -387,21 +387,68 @@ class GraphicOutlineAgent(BaseAgent):
             
             # 准备要写入的数据（只写入特定单元格数据）
             cell_data = {
-                "B1": "你好",  # 在B1单元格插入"你好"
-                "B2": "你好",  # 在B2单元格插入"你好"
-                "B3": "你好",  # 在B3单元格插入"你好"
-                "B4": "你好",  # 在B4单元格插入"你好"
-                "B5": "你好",  # 在B5单元格插入"你好"
-                "B6": "你好",  # 在B6单元格插入"你好"
-                "B7": "你好",  # 在B7单元格插入"你好"
+                "B1": "",  # 在B1单元格插入"你好"
+                "B2": "",  # 在B2单元格插入"你好"
+                "B3": "",  # 在B3单元格插入"你好"
+                "B4": "",  # 在B4单元格插入"你好"
+                "B5": "",  # 在B5单元格插入"你好"
+                "B6": "",  # 在B6单元格插入"你好"
+                "B7": "",  # 在B7单元格插入"你好"
                 "B8": captions_data['body'],  # 在B8单元格插入"你好"
-                "B9": outline_data.get("main_topic"),  # 在B9单元格插入"你好"
-                "C2": "你好",  # 在C2单元格插入"你好"
-                "D6": outline_data.get("selling_points"),  # 在D6单元格插入"你好"
+                "B9": outline_data.get("sections", {}).get("main_topic", ""),  # 在B9单元格插入"你好"
+                "C2": "",  # 在C2单元格插入"你好"
+                "D6": outline_data.get("selling_points"),  # 在D单元格插入"你好"
                 "E2": outline_data.get("blogger_style"),  # 在E2单元格插入"你好"
                 "F6": outline_data.get("product_endorsement"),  # 在F6单元格插入"你好"
+                
+                "A12": planting_data[0]['image_type'],  # 在B1单元格插入"你好"
+                "B12":  planting_data[0]['planning'],  # 在B2单元格插入"你好"
+                "C12":  planting_data[0]['caption'],
+                "D12":  planting_data[1]['image_type'],  # 在B1单元格插入"你好"
+                "E12":  planting_data[1]['planning'],  # 在B2单元格插入"你好"
+                "F12":  planting_data[1]['caption'],
+                
+                "A13": planting_data[2]['image_type'],  # 在B1单元格插入"你好"
+                "B13":  planting_data[2]['planning'],  # 在B2单元格插入"你好"
+                "C13":  planting_data[2]['caption'],
+                "D13":  planting_data[3]['image_type'],  # 在B1单元格插入"你好"
+                "E13":  planting_data[3]['planning'],  # 在B2单元格插入"你好"
+                "F13":  planting_data[3]['caption'],
+                
+                "A14": planting_data[4]['image_type'],  # 在B1单元格插入"你好"
+                "B14":  planting_data[4]['planning'],  # 在B2单元格插入"你好"
+                "C14":  planting_data[4]['caption'],
+                "D14":  planting_data[5]['image_type'],  # 在B1单元格插入"你好"
+                "E14":  planting_data[5]['planning'],  # 在B2单元格插入"你好"
+                "F14":  planting_data[5]['caption'],
+
+                "A15": planting_data[6]['image_type'],  # 在B1单元格插入"你好"
+                "B15":  planting_data[6]['planning'],  # 在B2单元格插入"你好"
+                "C15":  planting_data[6]['caption'],
+                "D15":  planting_data[7]['image_type'],  # 在B1单元格插入"你好"
+                "E15":  planting_data[7]['planning'],  # 在B2单元格插入"你好"
+                "F15":  planting_data[7]['caption'],
+
+                "A16": planting_data[8]['image_type'],  # 在B1单元格插入"你好"
+                "B16":  planting_data[8]['planning'],  # 在B2单元格插入"你好"
+                "C16":  planting_data[8]['caption'],
+                "D16":  planting_data[9]['image_type'],  # 在B1单元格插入"你好"
+                "E16":  planting_data[9]['planning'],  # 在B2单元格插入"你好"
+                "F16":  planting_data[9]['caption'],
             }
-            
+            # 构造所有单元格数据
+            # all_cell_data = {}
+            # for i, image_data in enumerate(planting_data):
+            #     row_index = 13 + i
+            #     all_cell_data.update({
+            #         f"A{row_index}": image_data['image_type'],
+            #         f"B{row_index}": image_data['planning'],
+            #         f"C{row_index}": image_data['caption'],
+            #         f"D{row_index}": image_data['remark']
+            #     })
+
+# 一次性填充所有数据
+# await self.fill_cells_in_sheet(spreadsheet_token, sheet_id, all_cell_data)
             # 统一设置单元格格式，确保字体一致
             await self._set_cell_format(spreadsheet_token, sheet_id, tenant_token, ["B1", "B2"])
             
@@ -622,10 +669,6 @@ class GraphicOutlineAgent(BaseAgent):
             # 从请求中提取数据
             topic = request.get("topic", "默认主题")
             outline_data = request.get("outline_data", {})
-            # 提取自定义填充数据（如果有的话）
-            custom_fill_data = request.get("custom_fill_data", None)
-            # 是否填充大纲数据的标志
-            fill_outline_data = request.get("fill_outline_data", True)
             
             # 基于模板创建飞书电子表格
             spreadsheet_token, sheet_id = await self._create_spreadsheet_from_template(topic)
@@ -1169,6 +1212,7 @@ XX（图片的文字内容）
 - 内容方向：{content_requirement}
 - 产品背书：{endorsement}
 - 必提内容：{output}
+- 图片张数要求：15张
 
 
 """

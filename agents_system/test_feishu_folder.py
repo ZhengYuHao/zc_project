@@ -57,7 +57,7 @@ async def get_root_folder_meta():
 
 
 async def list_files_in_folder(folder_token: str, page_token: str = None):
-    """
+    """ 
     获取文件夹中的文件清单
     
     Args:
