@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import asyncio
 import httpx
+import re
 
 # 添加项目根目录到Python路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -116,7 +117,7 @@ class GraphicOutlineAgent(BaseAgent):
             
             # 填充数据到电子表格
             await self._populate_spreadsheet_data(spreadsheet_token, sheet_id, outline_data)
-            
+
             # 构造响应
             response = GraphicOutlineResponse(
                 outline_data=outline_data,
@@ -329,6 +330,58 @@ class GraphicOutlineAgent(BaseAgent):
         self.logger.info(f"Populating spreadsheet data for spreadsheet: {spreadsheet_token}")
         
         try:
+            # agent = GraphicOutlineAgent()
+        
+            # # 准备测试数据
+            # processed_data = {
+            #     "topic": "夏季护肤指南",
+            #     "product_name": "水润防晒霜",
+            #     "product_highlights": "防晒、保湿、温和配方",
+            #     "note_style": "种草",
+            #     "requirements": "需要包含使用前后对比，适合敏感肌",
+            #     "direction": "重点介绍防晒效果和使用感受",
+            #     "blogger_link": "https://xiaohongshu.com/user/12345",
+            #     "sections": {
+            #         "target_audience": "适合户外活动较多的年轻女性",
+            #         "required_content": "需要展示防晒效果和使用感受",
+            #         "blogger_style": "小红书风格，轻松活泼",
+            #         "product_category": "护肤品",
+            #         "selling_points": "防晒指数高，温和不刺激，保湿效果好",
+            #         "product_endorsement": "专业护肤品牌",
+            #         "main_topic": "夏季防晒的重要性"
+            #     },
+            #     "total_words": 1000,
+            #     "estimated_time": "5分钟"
+            # }
+            
+            # 测试种草图文规划生成
+            planting_content = await self._generate_planting_content(outline_data)
+            self.logger.info("Generated planting content:")
+            self.logger.info(planting_content[:-1])
+
+            # 解析图文规划内容
+            planting_data = parse_planting_content(planting_content)
+            self.logger.info("Parsed planting data:")
+            for i, data in enumerate(planting_data):
+                self.logger.info(f"  Image {i+1}:")     
+                self.logger.info(f"    Type: {data['image_type']}")
+                self.logger.info(f"    Planning: {data['planning'][:100]}...")
+                self.logger.info(f"    Caption: {data['caption']}")
+                self.logger.info(f"    Remark: {data['remark']}")
+
+            # 测试种草配文生成
+            planting_captions = await self._generate_planting_captions(outline_data, planting_content)
+            self.logger.info("\nGenerated planting captions:")
+            self.logger.info(planting_captions[:-1])
+
+            # 解析配文内容
+            captions_data = parse_planting_captions(planting_captions)
+            self.logger.info("Parsed captions data:")
+            self.logger.info(f"  Titles: {captions_data['titles']}")
+            self.logger.info(f"  Body length: {captions_data['body']}")
+            self.logger.info(f"  Hashtags: {captions_data['hashtags']}")
+
+            
             # 获取飞书访问令牌
             tenant_token = await self.feishu_client.get_tenant_access_token()
             
@@ -341,12 +394,12 @@ class GraphicOutlineAgent(BaseAgent):
                 "B5": "你好",  # 在B5单元格插入"你好"
                 "B6": "你好",  # 在B6单元格插入"你好"
                 "B7": "你好",  # 在B7单元格插入"你好"
-                "B8": "你好",  # 在B8单元格插入"你好"
-                "B9": "你好",  # 在B9单元格插入"你好"
+                "B8": captions_data['body'],  # 在B8单元格插入"你好"
+                "B9": outline_data.get("main_topic"),  # 在B9单元格插入"你好"
                 "C2": "你好",  # 在C2单元格插入"你好"
-                "D6": "你好",  # 在D6单元格插入"你好"
-                "E2": "你好",  # 在E2单元格插入"你好"
-                "F6": "你好",  # 在F6单元格插入"你好"
+                "D6": outline_data.get("selling_points"),  # 在D6单元格插入"你好"
+                "E2": outline_data.get("blogger_style"),  # 在E2单元格插入"你好"
+                "F6": outline_data.get("product_endorsement"),  # 在F6单元格插入"你好"
             }
             
             # 统一设置单元格格式，确保字体一致
@@ -578,19 +631,8 @@ class GraphicOutlineAgent(BaseAgent):
             spreadsheet_token, sheet_id = await self._create_spreadsheet_from_template(topic)
             
             # 填充数据到电子表格（仅当fill_outline_data为True时）
-            if fill_outline_data and outline_data:
-                await self._populate_spreadsheet_data(spreadsheet_token, sheet_id, outline_data)
             
-            # 如果有自定义填充数据，则进行填充
-            if custom_fill_data and "cells" in custom_fill_data:
-                self.logger.info("Filling custom data to spreadsheet")
-                tenant_token = await self.feishu_client.get_tenant_access_token()
-                await self.cell_filler.fill_cells(
-                    spreadsheet_token, 
-                    sheet_id, 
-                    tenant_token, 
-                    custom_fill_data["cells"]
-                )
+            await self._populate_spreadsheet_data(spreadsheet_token, sheet_id, outline_data)
             
             result = {
                 "status": "success",
@@ -673,22 +715,18 @@ class GraphicOutlineAgent(BaseAgent):
                 planting_captions = await self._generate_planting_captions(processed_data, planting_content)
                 processed_data["planting_captions"] = planting_captions
                 
-                # 生成格式统一的输出
-                formatted_output = await self._generate_formatted_output(processed_data, planting_content, planting_captions)
-                processed_data["formatted_output"] = formatted_output
+            
             else:
                 # 处理图文规划(测试)的工作
                 planting_content = await self._generate_planting_content(processed_data)
                 processed_data["planting_content"] = planting_content
-                processed_data["note_style"] = "图文规划(测试)"
+               
                 
                 # 生成种草配文
                 planting_captions = await self._generate_planting_captions(processed_data, planting_content)
                 processed_data["planting_captions"] = planting_captions
                 
-                # 生成格式统一的输出
-                formatted_output = await self._generate_formatted_output(processed_data, planting_content, planting_captions)
-                processed_data["formatted_output"] = formatted_output
+
             
             # 创建飞书电子表格
             spreadsheet_result = await self.create_feishu_sheet({
@@ -1145,3 +1183,69 @@ XX（图片的文字内容）
         except Exception as e:
             self.logger.error(f"Error generating planting content: {str(e)}")
             return "种草图文规划生成失败"
+
+
+
+def parse_planting_content(content: str) -> List[Dict[str, str]]:
+    """
+    解析图文规划内容
+    
+    Args:
+        content: 大模型返回的图文规划文本
+        
+    Returns:
+        解析后的图文规划数据列表
+    """
+    # 使用正则表达式匹配图文规划内容
+    pattern = r'图片类型：(.*?)\n图文规划：\n(.*?)\n图片的文字内容：(.*?)\n备注：(.*?)(?=\n\n图片类型：|$)'
+    matches = re.findall(pattern, content, re.DOTALL)
+    
+    result = []
+    for match in matches:
+        image_info = {
+            "image_type": match[0].strip(),
+            "planning": match[1].strip(),
+            "caption": match[2].strip(),
+            "remark": match[3].strip()
+        }
+        result.append(image_info)
+    
+    return result
+
+
+def parse_planting_captions(content: str) -> Dict[str, Any]:
+    """
+    解析配文内容
+    
+    Args:
+        content: 大模型返回的配文文本
+        
+    Returns:
+        解析后的配文数据
+    """
+    captions_data = {
+        "titles": [],
+        "body": "",
+        "hashtags": []
+    }
+    
+    # 解析标题部分
+    title_match = re.search(r'- \*\*标题\*\*：((?:\n\s*- [^\n]+)+)', content)
+    if title_match:
+        titles_text = title_match.group(1)
+        titles = re.findall(r'- ([^\n]+)', titles_text)
+        captions_data["titles"] = [title.strip() for title in titles]
+    
+    # 解析正文部分
+    body_match = re.search(r'- \*\*正文\*\*：(.*?)(?=\n- \*\*标签|\Z)', content, re.DOTALL)
+    if body_match:
+        captions_data["body"] = body_match.group(1).strip()
+    
+    # 解析标签部分
+    hashtag_match = re.search(r'- \*\*标签\*\*：(.*?)(?=\Z)', content, re.DOTALL)
+    if hashtag_match:
+        hashtags_text = hashtag_match.group(1).strip()
+        hashtags = re.findall(r'#\S+', hashtags_text)
+        captions_data["hashtags"] = hashtags
+    
+    return captions_data

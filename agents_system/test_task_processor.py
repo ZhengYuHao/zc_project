@@ -7,6 +7,8 @@
 import asyncio
 import sys
 import os
+import re
+from typing import List, Dict, Any
 
 # 添加项目根目录到Python路径
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 修改为项目根目录的上一级目录
@@ -35,73 +37,72 @@ except ImportError as e:
 logger = get_logger("test.task_processor")
 
 
+def parse_planting_content(content: str) -> List[Dict[str, str]]:
+    """
+    解析图文规划内容
+    
+    Args:
+        content: 大模型返回的图文规划文本
+        
+    Returns:
+        解析后的图文规划数据列表
+    """
+    # 使用正则表达式匹配图文规划内容
+    pattern = r'图片类型：(.*?)\n图文规划：\n(.*?)\n图片的文字内容：(.*?)\n备注：(.*?)(?=\n\n图片类型：|$)'
+    matches = re.findall(pattern, content, re.DOTALL)
+    
+    result = []
+    for match in matches:
+        image_info = {
+            "image_type": match[0].strip(),
+            "planning": match[1].strip(),
+            "caption": match[2].strip(),
+            "remark": match[3].strip()
+        }
+        result.append(image_info)
+    
+    return result
+
+
+def parse_planting_captions(content: str) -> Dict[str, Any]:
+    """
+    解析配文内容
+    
+    Args:
+        content: 大模型返回的配文文本
+        
+    Returns:
+        解析后的配文数据
+    """
+    captions_data = {
+        "titles": [],
+        "body": "",
+        "hashtags": []
+    }
+    
+    # 解析标题部分
+    title_match = re.search(r'- \*\*标题\*\*：((?:\n\s*- [^\n]+)+)', content)
+    if title_match:
+        titles_text = title_match.group(1)
+        titles = re.findall(r'- ([^\n]+)', titles_text)
+        captions_data["titles"] = [title.strip() for title in titles]
+    
+    # 解析正文部分
+    body_match = re.search(r'- \*\*正文\*\*：(.*?)(?=\n- \*\*标签|\Z)', content, re.DOTALL)
+    if body_match:
+        captions_data["body"] = body_match.group(1).strip()
+    
+    # 解析标签部分
+    hashtag_match = re.search(r'- \*\*标签\*\*：(.*?)(?=\Z)', content, re.DOTALL)
+    if hashtag_match:
+        hashtags_text = hashtag_match.group(1).strip()
+        hashtags = re.findall(r'#\S+', hashtags_text)
+        captions_data["hashtags"] = hashtags
+    
+    return captions_data
+
+
 async def test_task_processor():
-    """测试任务处理器"""
-    # logger.info("Testing Task Processor...")
-    
-    # # 测试数据
-    # test_request = {
-    #     "topic": "夏季护肤指南",
-    #     "product_highlights": "防晒、保湿、温和配方",
-    #     "note_style": "种草",
-    #     "product_name": "水润防晒霜",
-    #     "direction": "重点介绍防晒效果和使用感受",
-    #     "blogger_link": "https://xiaohongshu.com/user/12345",
-    #     "requirements": "需要包含使用前后对比，适合敏感肌",
-    #     "style": "活泼"
-    # }
-    
-    # logger.info("Test request data:")
-    # for key, value in test_request.items():
-    #     logger.info(f"  {key}: {value}")
-    
-    # logger.info("="*50)
-    
-    # # 测试单个任务处理函数
-    # logger.info("Testing individual task functions...")
-    
-    # logger.info("="*50)
-    
-    # # 测试并发任务执行
-    # logger.info("Testing concurrent task execution...")
-    
-    # try:
-    #     results = await task_processor.execute_tasks(test_request)
-    #     logger.info(f"Concurrent task execution results:{results}")
-    #     for task_name, result in results.items():
-    #         logger.info(f"  {task_name}: {result['status']}")
-    #         if result['status'] == 'success':
-    #             logger.info(f"    Data: {result['data']}")
-    #         else:
-    #             logger.error(f"    Error: {result['error']}")
-    # except Exception as e:
-    #     logger.error(f"Error in concurrent task execution: {e}")
-    
-    # logger.info("="*50)
-    
-    # # 测试数据聚合和处理
-    # logger.info("Testing data aggregation and processing...")
-    
-    # try:
-    #     # 创建GraphicOutlineAgent实例以访问_aggregate_and_process方法
-    #     agent = GraphicOutlineAgent()
-    #     # 使用真实的_aggregate_and_process方法
-    #     aggregated_result = await agent._aggregate_and_process(results, test_request)
-    #     logger.info(f"Aggregated result: {aggregated_result}")
-    #     logger.info(f"Total sections: {len(aggregated_result.get('sections', {}))}")
-    #     if 'sections' in aggregated_result and isinstance(aggregated_result['sections'], dict):
-    #         sections = aggregated_result['sections']
-    #         for section_name, section_content in sections.items():
-    #             logger.info(f"  Section '{section_name}': {section_content}")
-    # except Exception as e:
-    #     logger.error(f"Error in data aggregation and processing: {e}")
-    #     import traceback
-    #     logger.error(traceback.format_exc())
-    
-    # logger.info("="*50)
-    
-    # # 测试图文规划生成逻辑
-    # logger.info("Testing planting content generation...")
     
     try:
         # 创建GraphicOutlineAgent实例以访问_generate_planting_content方法
@@ -129,41 +130,32 @@ async def test_task_processor():
             "estimated_time": "5分钟"
         }
         
-        # # 测试种草图文规划生成
-        # planting_content = await agent._generate_planting_content(processed_data)
-        # logger.info("Generated planting content:")
-        # logger.info(planting_content[:-1])
-
+        # 测试种草图文规划生成
+        planting_content = await agent._generate_planting_content(processed_data)
+        logger.info("Generated planting content:")
+        logger.info(planting_content[:-1])
         
-        # # 测试图文规划(测试)模式下的配文生成
-        # planting_captions_test = await agent._generate_planting_captions(processed_data, planting_content)
-        # logger.info("\nGenerated planting captions (test mode):")
-        # logger.info(planting_captions_test[:-1])
+        # 解析图文规划内容
+        planting_data = parse_planting_content(planting_content)
+        logger.info("Parsed planting data:")
+        for i, data in enumerate(planting_data):
+            logger.info(f"  Image {i+1}:")
+            logger.info(f"    Type: {data['image_type']}")
+            logger.info(f"    Planning: {data['planning'][:100]}...")
+            logger.info(f"    Caption: {data['caption']}")
+            logger.info(f"    Remark: {data['remark']}")
         
-        # # 测试图文规划(测试)模式下的格式统一输出生成
-        # planting_content_test = await agent._generate_planting_content(processed_data)
-        # formatted_output_test = await agent._generate_formatted_output(processed_data, planting_content_test, planting_captions_test)
-        # logger.info("\nGenerated formatted output (test mode):")
-        # logger.info(formatted_output_test[:1000] + "..." if len(formatted_output_test) > 1000 else formatted_output_test)
+        # 测试种草配文生成
+        planting_captions = await agent._generate_planting_captions(processed_data, planting_content)
+        logger.info("\nGenerated planting captions:")
+        logger.info(planting_captions[:-1])
         
-        # # 完整流程测试 - 从图文规划到配文再到格式化输出
-        # logger.info("\n" + "="*50)
-        # logger.info("Testing complete workflow: planting content -> captions -> formatted output")
-        
-        # 使用"种草"模式进行完整流程测试
-        processed_data["note_style"] = "种草"
-        complete_planting_content = await agent._generate_planting_content(processed_data)
-        complete_planting_captions = await agent._generate_planting_captions(processed_data, complete_planting_content)
-        complete_formatted_output = await agent._generate_formatted_output(processed_data, complete_planting_content, complete_planting_captions)
-        
-        logger.info("Complete workflow test results:")
-        logger.info(f"1. Planting content generated: {len(complete_planting_content) > 0}")
-        logger.info(f"2. Planting captions generated: {len(complete_planting_captions) > 0}")
-        logger.info(f"3. Formatted output generated: {len(complete_formatted_output) > 0}")
-        
-        if len(complete_formatted_output) > 0:
-            logger.info("Sample of formatted output:")
-            logger.info(complete_formatted_output[:-1])
+        # 解析配文内容
+        captions_data = parse_planting_captions(planting_captions)
+        logger.info("Parsed captions data:")
+        logger.info(f"  Titles: {captions_data['titles']}")
+        logger.info(f"  Body length: {captions_data['body']}")
+        logger.info(f"  Hashtags: {captions_data['hashtags']}")
         
     except Exception as e:
         logger.error(f"Error in planting content generation: {e}")
