@@ -403,38 +403,38 @@ class GraphicOutlineAgent(BaseAgent):
                 
                 "A12": planting_data[0]['image_type'],  # 在B1单元格插入"你好"
                 "B12":  planting_data[0]['planning'],  # 在B2单元格插入"你好"
-                "C12":  planting_data[0]['caption'],
+                "C12":  planting_data[0]['remark'],
                 "D12":  planting_data[1]['image_type'],  # 在B1单元格插入"你好"
                 "E12":  planting_data[1]['planning'],  # 在B2单元格插入"你好"
-                "F12":  planting_data[1]['caption'],
+                "F12":  planting_data[1]['remark'],
                 
                 "A13": planting_data[2]['image_type'],  # 在B1单元格插入"你好"
                 "B13":  planting_data[2]['planning'],  # 在B2单元格插入"你好"
-                "C13":  planting_data[2]['caption'],
+                "C13":  planting_data[2]['remark'],
                 "D13":  planting_data[3]['image_type'],  # 在B1单元格插入"你好"
                 "E13":  planting_data[3]['planning'],  # 在B2单元格插入"你好"
-                "F13":  planting_data[3]['caption'],
+                "F13":  planting_data[3]['remark'],
                 
                 "A14": planting_data[4]['image_type'],  # 在B1单元格插入"你好"
                 "B14":  planting_data[4]['planning'],  # 在B2单元格插入"你好"
-                "C14":  planting_data[4]['caption'],
+                "C14":  planting_data[4]['remark'],
                 "D14":  planting_data[5]['image_type'],  # 在B1单元格插入"你好"
                 "E14":  planting_data[5]['planning'],  # 在B2单元格插入"你好"
-                "F14":  planting_data[5]['caption'],
+                "F14":  planting_data[5]['remark'],
 
                 "A15": planting_data[6]['image_type'],  # 在B1单元格插入"你好"
                 "B15":  planting_data[6]['planning'],  # 在B2单元格插入"你好"
-                "C15":  planting_data[6]['caption'],
+                "C15":  planting_data[6]['remark'],
                 "D15":  planting_data[7]['image_type'],  # 在B1单元格插入"你好"
                 "E15":  planting_data[7]['planning'],  # 在B2单元格插入"你好"
-                "F15":  planting_data[7]['caption'],
+                "F15":  planting_data[7]['remark'],
 
                 "A16": planting_data[8]['image_type'],  # 在B1单元格插入"你好"
                 "B16":  planting_data[8]['planning'],  # 在B2单元格插入"你好"
-                "C16":  planting_data[8]['caption'],
+                "C16":  planting_data[8]['remark'],
                 "D16":  planting_data[9]['image_type'],  # 在B1单元格插入"你好"
                 "E16":  planting_data[9]['planning'],  # 在B2单元格插入"你好"
-                "F16":  planting_data[9]['caption'],
+                "F16":  planting_data[9]['remark'],
             }
             # 构造所有单元格数据
             # all_cell_data = {}
@@ -1091,6 +1091,7 @@ class GraphicOutlineAgent(BaseAgent):
 - 静态画面描述（定格的场景、构图、氛围）
 - 简短的配图文案（用于图片上的花字或简短口语化表达，≤20字）
 - 必要的备注（对光线、人物表情、氛围等补充说明）
+- 图片张数要求：必须必须必须15张！！！！!！！！！！
 
 ## 产品背景信息
 - 产品名称：{product_name}
@@ -1212,7 +1213,7 @@ XX（图片的文字内容）
 - 内容方向：{content_requirement}
 - 产品背书：{endorsement}
 - 必提内容：{output}
-- 图片张数要求：15张
+- 图片张数要求：必须必须必须15张！！！！!！！！！！
 
 
 """
