@@ -60,6 +60,27 @@ class OutlineData(BaseModel):
     estimated_time: str
 
 
+class ProcessRequestInput(BaseModel):
+    """ProcessRequest输入模型"""
+    topic: str
+    product_highlights: Optional[str] = None
+    note_style: Optional[str] = None
+    product_name: Optional[str] = None
+    direction: Optional[str] = None
+    blogger_link: Optional[str] = None
+    requirements: Optional[str] = None
+    style: Optional[str] = None
+
+
+class ProcessRequestResponse(BaseModel):
+    """ProcessRequest响应模型"""
+    status: str
+    task_results: Optional[Dict[str, Any]] = None
+    processed_data: Optional[Dict[str, Any]] = None
+    spreadsheet: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+
+
 class GraphicOutlineAgent(BaseAgent):
     """图文大纲生成智能体，用于生成图文内容的大纲并创建飞书电子表格"""
     
@@ -79,6 +100,7 @@ class GraphicOutlineAgent(BaseAgent):
         # 添加特定路由
         self.router.post("/generate", response_model=GraphicOutlineResponse)(self.generate_outline)
         self.router.post("/feishu/sheet", response_model=dict)(self.create_feishu_sheet)
+        self.router.post("/process-request", response_model=ProcessRequestResponse)(self.process_request_api)
         
     async def process(self, input_data: GraphicOutlineRequest) -> GraphicOutlineResponse:
         """
@@ -91,6 +113,117 @@ class GraphicOutlineAgent(BaseAgent):
             图文大纲生成结果
         """
         return await self.generate_outline(input_data)
+    
+    async def process_request_api(self, request: ProcessRequestInput) -> ProcessRequestResponse:
+        """
+        RESTful API接口，用于处理process_request请求
+        
+        Args:
+            request: ProcessRequest输入数据
+            
+        Returns:
+            ProcessRequest处理结果
+        """
+        self.logger.info("Processing process_request API request")
+        
+        try:
+            # 转换请求数据为process_request所需的格式
+            request_data = {
+                "topic": request.topic,
+                "product_highlights": request.product_highlights,
+                "note_style": request.note_style,
+                "product_name": request.product_name,
+                "direction": request.direction,
+                "blogger_link": request.blogger_link,
+                "requirements": request.requirements,
+                "style": request.style
+            }
+            
+            # 调用process_request方法
+            result = await self.process_request(request_data)
+            
+            # 构造响应
+            response = ProcessRequestResponse(
+                status=result.get("status", "unknown"),
+                task_results=result.get("task_results"),
+                processed_data=result.get("processed_data"),
+                spreadsheet=result.get("spreadsheet"),
+                error=result.get("error")
+            )
+            
+            self.logger.info("Successfully processed process_request API request")
+            return response
+            
+        except Exception as e:
+            self.logger.error(f"Error processing process_request API request: {str(e)}")
+            return ProcessRequestResponse(
+                status="error",
+                error=str(e)
+            )
+    
+    async def process_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        处理图文大纲生成请求
+        
+        Args:
+            request: 请求数据
+            
+        Returns:
+            处理结果
+        """
+        self.logger.info("Processing graphic outline request")
+        
+        try:
+            # 并发执行七个任务
+            task_results = await task_processor.execute_tasks(request)
+            
+            # 汇总任务结果并进行下一步处理
+            processed_data = await self._aggregate_and_process(task_results, request)
+
+            if processed_data.get("note_style") == "种草":
+                # 调用豆包大模型生成种草图文规划
+                planting_content = await self._generate_planting_content(processed_data)
+                processed_data["planting_content"] = planting_content
+                
+                # 生成种草配文
+                planting_captions = await self._generate_planting_captions(processed_data, planting_content)
+                processed_data["planting_captions"] = planting_captions
+                
+            
+            else:
+                # 处理图文规划(测试)的工作
+                planting_content = await self._generate_planting_content(processed_data)
+                processed_data["planting_content"] = planting_content
+               
+                
+                # 生成种草配文
+                planting_captions = await self._generate_planting_captions(processed_data, planting_content)
+                processed_data["planting_captions"] = planting_captions
+                
+
+            
+            # 创建飞书电子表格
+            spreadsheet_result = await self.create_feishu_sheet({
+                "topic": request.get("topic", "默认主题"),
+                "outline_data": processed_data
+            })
+            
+            result = {
+                "status": "success",
+                "task_results": task_results,
+                "processed_data": processed_data,
+                "spreadsheet": spreadsheet_result
+            }
+            
+            self.logger.info("Successfully processed graphic outline request")
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Error processing graphic outline request: {str(e)}")
+            return {
+                "status": "error",
+                "error": str(e)
+            }
     
     async def generate_outline(self, request: GraphicOutlineRequest) -> GraphicOutlineResponse:
         """
@@ -725,70 +858,6 @@ class GraphicOutlineAgent(BaseAgent):
             
         except Exception as e:
             self.logger.error(f"Error filling cells in sheet {spreadsheet_token}: {str(e)}")
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-    
-    async def process_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        处理图文大纲生成请求
-        
-        Args:
-            request: 请求数据
-            
-        Returns:
-            处理结果
-        """
-        self.logger.info("Processing graphic outline request")
-        
-        try:
-            # 并发执行七个任务
-            task_results = await task_processor.execute_tasks(request)
-            
-            # 汇总任务结果并进行下一步处理
-            processed_data = await self._aggregate_and_process(task_results, request)
-
-            if processed_data.get("note_style") == "种草":
-                # 调用豆包大模型生成种草图文规划
-                planting_content = await self._generate_planting_content(processed_data)
-                processed_data["planting_content"] = planting_content
-                
-                # 生成种草配文
-                planting_captions = await self._generate_planting_captions(processed_data, planting_content)
-                processed_data["planting_captions"] = planting_captions
-                
-            
-            else:
-                # 处理图文规划(测试)的工作
-                planting_content = await self._generate_planting_content(processed_data)
-                processed_data["planting_content"] = planting_content
-               
-                
-                # 生成种草配文
-                planting_captions = await self._generate_planting_captions(processed_data, planting_content)
-                processed_data["planting_captions"] = planting_captions
-                
-
-            
-            # 创建飞书电子表格
-            spreadsheet_result = await self.create_feishu_sheet({
-                "topic": request.get("topic", "默认主题"),
-                "outline_data": processed_data
-            })
-            
-            result = {
-                "status": "success",
-                "task_results": task_results,
-                "processed_data": processed_data,
-                "spreadsheet": spreadsheet_result
-            }
-            
-            self.logger.info("Successfully processed graphic outline request")
-            return result
-            
-        except Exception as e:
-            self.logger.error(f"Error processing graphic outline request: {str(e)}")
             return {
                 "status": "error",
                 "error": str(e)
