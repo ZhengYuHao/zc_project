@@ -85,6 +85,57 @@ async def create_spreadsheet():
             print(f"成功创建电子表格!")
             print(f"电子表格Token: {spreadsheet_token}")
             print(f"电子表格URL: {spreadsheet_url}")
+            
+            # 设置电子表格权限为任何人可编辑
+            print("正在设置电子表格权限为任何人可编辑...")
+            
+            # 使用drive/v2版本的API和参数设置权限（根据官方示例）
+            permission_url = f"https://open.feishu.cn/open-apis/drive/v2/permissions/{spreadsheet_token}/public"
+            permission_payload = {
+                "external_access_entity": "open",
+                "security_entity": "anyone_can_edit",
+                "comment_entity": "anyone_can_edit",
+                "share_entity": "anyone",
+                "manage_collaborator_entity": "collaborator_can_edit",
+                "link_share_entity": "anyone_editable",  # 修正为正确的值
+                "copy_entity": "anyone_can_edit"
+            }
+            
+            # 添加type参数到URL查询参数中
+            permission_url_with_type = f"{permission_url}?type=sheet"
+            
+            print(f"权限设置URL: {permission_url_with_type}")
+            print(f"权限设置请求体: {permission_payload}")
+            
+            try:
+                permission_response = await feishu_client.client.patch(
+                    permission_url_with_type, 
+                    headers=headers, 
+                    json=permission_payload, 
+                    timeout=30.0
+                )
+                print(f"权限设置响应状态码: {permission_response.status_code}")
+                print(f"权限设置响应内容: {permission_response.text}")
+                
+                if permission_response.status_code == 200:
+                    try:
+                        permission_result = permission_response.json()
+                        if permission_result.get("code") == 0:
+                            print("成功设置电子表格为任何人可编辑!")
+                            print("请稍等片刻让权限设置生效，然后刷新页面查看效果")
+                        else:
+                            print(f"设置权限失败: {permission_result}")
+                    except Exception:
+                        # 如果无法解析JSON响应，但状态码是200，仍然认为成功
+                        print("成功设置电子表格为任何人可编辑!")
+                        print("请稍等片刻让权限设置生效，然后刷新页面查看效果")
+                else:
+                    print("设置电子表格权限失败，请手动在飞书文档中设置")
+                    
+            except Exception as e:
+                print(f"设置权限时出错: {str(e)}")
+                print("请手动在飞书文档中设置电子表格权限")
+            
             return spreadsheet_url
         else:
             print("未能从响应中提取电子表格信息")
