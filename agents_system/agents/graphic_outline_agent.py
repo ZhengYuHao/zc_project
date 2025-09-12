@@ -465,29 +465,6 @@ class GraphicOutlineAgent(BaseAgent):
         self.logger.info(f"Populating spreadsheet data for spreadsheet: {spreadsheet_token}")
         
         try:
-            # agent = GraphicOutlineAgent()
-        
-            # # 准备测试数据
-            # processed_data = {
-            #     "topic": "夏季护肤指南",
-            #     "product_name": "水润防晒霜",
-            #     "product_highlights": "防晒、保湿、温和配方",
-            #     "note_style": "种草",
-            #     "requirements": "需要包含使用前后对比，适合敏感肌",
-            #     "direction": "重点介绍防晒效果和使用感受",
-            #     "blogger_link": "https://xiaohongshu.com/user/12345",
-            #     "sections": {
-            #         "target_audience": "适合户外活动较多的年轻女性",
-            #         "required_content": "需要展示防晒效果和使用感受",
-            #         "blogger_style": "小红书风格，轻松活泼",
-            #         "product_category": "护肤品",
-            #         "selling_points": "防晒指数高，温和不刺激，保湿效果好",
-            #         "product_endorsement": "专业护肤品牌",
-            #         "main_topic": "夏季防晒的重要性"
-            #     },
-            #     "total_words": 1000,
-            #     "estimated_time": "5分钟"
-            # }
             
             # 测试种草图文规划生成
             planting_content = await self._generate_planting_content(outline_data)
@@ -559,20 +536,7 @@ class GraphicOutlineAgent(BaseAgent):
                     
                     row += 1
             
-            # 构造所有单元格数据
-            # all_cell_data = {}
-            # for i, image_data in enumerate(planting_data):
-            #     row_index = 13 + i
-            #     all_cell_data.update({
-            #         f"A{row_index}": image_data['image_type'],
-            #         f"B{row_index}": image_data['planning'],
-            #         f"C{row_index}": image_data['caption'],
-            #         f"D{row_index}": image_data['remark']
-            #     })
 
-# 一次性填充所有数据
-# await self.fill_cells_in_sheet(spreadsheet_token, sheet_id, all_cell_data)
-            # 统一设置单元格格式，确保字体一致
             await self._set_cell_format(spreadsheet_token, sheet_id, tenant_token, ["B1", "B2"])
             
             # 使用fill_cells_in_sheet方法填充数据
@@ -1003,7 +967,7 @@ class GraphicOutlineAgent(BaseAgent):
         # 添加产品背书章节
         if "product_endorsement_extractor" in aggregated_data:
             endorsement_data = aggregated_data["product_endorsement_extractor"]
-            sections["product_endorsement"] = endorsement_data.get("endorsement_type", "")
+            sections["product_endorsement"] = endorsement_data.get("product_endorsement", "")
         
         # 添加话题章节
         if "topic_extractor" in aggregated_data:
@@ -1013,8 +977,8 @@ class GraphicOutlineAgent(BaseAgent):
         
         processed_outline["sections"] = sections
         processed_outline["total_words"] = sum(len(str(content)) for content in sections.values())
-        
-        self.logger.info("Successfully aggregated and processed task results")
+
+        self.logger.info(f"Successfully aggregated and processed task results: {processed_outline}")
         return processed_outline
     
     async def _generate_formatted_output(self, processed_data: Dict[str, Any], planting_content: str, planting_captions: str, user_prompt: Optional[str] = None) -> str:
