@@ -93,11 +93,11 @@ async def create_spreadsheet():
             permission_url = f"https://open.feishu.cn/open-apis/drive/v2/permissions/{spreadsheet_token}/public"
             permission_payload = {
                 "external_access_entity": "open",
-                "security_entity": "anyone_can_view",
-                "comment_entity": "anyone_can_view",
+                "security_entity": "anyone_can_edit",
+                "comment_entity": "anyone_can_edit",
                 "share_entity": "anyone",
-                "manage_collaborator_entity": "collaborator_can_view",
-                "link_share_entity": "tenant_readable",
+                "manage_collaborator_entity": "collaborator_can_edit",
+                "link_share_entity": "anyone_editable",  # 修正为正确的值
                 "copy_entity": "anyone_can_edit"
             }
             
@@ -122,11 +122,13 @@ async def create_spreadsheet():
                         permission_result = permission_response.json()
                         if permission_result.get("code") == 0:
                             print("成功设置电子表格为任何人可编辑!")
+                            print("请稍等片刻让权限设置生效，然后刷新页面查看效果")
                         else:
                             print(f"设置权限失败: {permission_result}")
                     except Exception:
                         # 如果无法解析JSON响应，但状态码是200，仍然认为成功
                         print("成功设置电子表格为任何人可编辑!")
+                        print("请稍等片刻让权限设置生效，然后刷新页面查看效果")
                 else:
                     print("设置电子表格权限失败，请手动在飞书文档中设置")
                     

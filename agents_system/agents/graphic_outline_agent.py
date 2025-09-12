@@ -5,6 +5,8 @@ from typing import Optional, List, Dict, Any
 import asyncio
 import httpx
 import re
+from typing import Dict, Any, List, Optional
+from pydantic import BaseModel
 
 # 添加项目根目录到Python路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -100,7 +102,7 @@ class GraphicOutlineAgent(BaseAgent):
         # 添加特定路由
         self.router.post("/generate", response_model=GraphicOutlineResponse)(self.generate_outline)
         self.router.post("/feishu/sheet", response_model=dict)(self.create_feishu_sheet)
-        self.router.post("/process-request", response_model=ProcessRequestResponse)(self.process_request_api)
+        self.router.post("      ", response_model=ProcessRequestResponse)(self.process_request_api)
         
     async def process(self, input_data: GraphicOutlineRequest) -> GraphicOutlineResponse:
         """
@@ -494,7 +496,7 @@ class GraphicOutlineAgent(BaseAgent):
 
             # 解析图文规划内容
             planting_data = parse_planting_content(planting_content)
-            self.logger.info("Parsed planting data:")
+            self.logger.info(f"Parsed planting data:{planting_data}")
             for i, data in enumerate(planting_data):
                 self.logger.info(f"  Image {i+1}:")     
                 self.logger.info(f"    Type: {data['image_type']}")
@@ -533,42 +535,30 @@ class GraphicOutlineAgent(BaseAgent):
                 "D6": outline_data.get("selling_points"),  # 在D单元格插入"你好"
                 "E2": outline_data.get("blogger_style"),  # 在E2单元格插入"你好"
                 "F6": outline_data.get("product_endorsement"),  # 在F6单元格插入"你好"
-                
-                "A12": planting_data[0]['image_type'],  # 在B1单元格插入"你好"
-                "B12":  planting_data[0]['planning'],  # 在B2单元格插入"你好"
-                "C12":  planting_data[0]['remark'],
-                "D12":  planting_data[1]['image_type'],  # 在B1单元格插入"你好"
-                "E12":  planting_data[1]['planning'],  # 在B2单元格插入"你好"
-                "F12":  planting_data[1]['remark'],
-                
-                "A13": planting_data[2]['image_type'],  # 在B1单元格插入"你好"
-                "B13":  planting_data[2]['planning'],  # 在B2单元格插入"你好"
-                "C13":  planting_data[2]['remark'],
-                "D13":  planting_data[3]['image_type'],  # 在B1单元格插入"你好"
-                "E13":  planting_data[3]['planning'],  # 在B2单元格插入"你好"
-                "F13":  planting_data[3]['remark'],
-                
-                "A14": planting_data[4]['image_type'],  # 在B1单元格插入"你好"
-                "B14":  planting_data[4]['planning'],  # 在B2单元格插入"你好"
-                "C14":  planting_data[4]['remark'],
-                "D14":  planting_data[5]['image_type'],  # 在B1单元格插入"你好"
-                "E14":  planting_data[5]['planning'],  # 在B2单元格插入"你好"
-                "F14":  planting_data[5]['remark'],
-
-                "A15": planting_data[6]['image_type'],  # 在B1单元格插入"你好"
-                "B15":  planting_data[6]['planning'],  # 在B2单元格插入"你好"
-                "C15":  planting_data[6]['remark'],
-                "D15":  planting_data[7]['image_type'],  # 在B1单元格插入"你好"
-                "E15":  planting_data[7]['planning'],  # 在B2单元格插入"你好"
-                "F15":  planting_data[7]['remark'],
-
-                "A16": planting_data[8]['image_type'],  # 在B1单元格插入"你好"
-                "B16":  planting_data[8]['planning'],  # 在B2单元格插入"你好"
-                "C16":  planting_data[8]['remark'],
-                "D16":  planting_data[9]['image_type'],  # 在B1单元格插入"你好"
-                "E16":  planting_data[9]['planning'],  # 在B2单元格插入"你好"
-                "F16":  planting_data[9]['remark'],
             }
+            
+            # 安全地处理planting_data数组，避免数组越界问题
+            # 每行处理两个数据项，分别放在左侧三列(A,B,C)和右侧三列(D,E,F)
+            if planting_data:
+                row = 12  # 起始行
+                # 每次处理两个数据项
+                for i in range(0, len(planting_data), 2):
+                    # 处理第一个数据项（放在左侧A,B,C列）
+                    if i < len(planting_data):
+                        data_item = planting_data[i]
+                        cell_data[f"A{row}"] = data_item.get('image_type', '')
+                        cell_data[f"B{row}"] = data_item.get('planning', '')
+                        cell_data[f"C{row}"] = data_item.get('remark', '')
+                    
+                    # 处理第二个数据项（放在右侧D,E,F列）
+                    if i + 1 < len(planting_data):
+                        data_item = planting_data[i + 1]
+                        cell_data[f"D{row}"] = data_item.get('image_type', '')
+                        cell_data[f"E{row}"] = data_item.get('planning', '')
+                        cell_data[f"F{row}"] = data_item.get('remark', '')
+                    
+                    row += 1
+            
             # 构造所有单元格数据
             # all_cell_data = {}
             # for i, image_data in enumerate(planting_data):
@@ -798,6 +788,10 @@ class GraphicOutlineAgent(BaseAgent):
         """
         self.logger.info("Creating Feishu sheet")
         
+        
+        
+        
+        
         try:
             # 从请求中提取数据
             topic = request.get("topic", "默认主题")
@@ -809,6 +803,16 @@ class GraphicOutlineAgent(BaseAgent):
             # 填充数据到电子表格（仅当fill_outline_data为True时）
             
             await self._populate_spreadsheet_data(spreadsheet_token, sheet_id, outline_data)
+            
+            
+            
+            # 设置电子表格权限为任何人可编辑
+            self.logger.info("Setting spreadsheet permissions to anyone can edit")
+            try:
+                await self._set_spreadsheet_public_editable(spreadsheet_token)
+                self.logger.info("Successfully set spreadsheet permissions")
+            except Exception as e:
+                self.logger.error(f"Failed to set spreadsheet permissions: {str(e)}")
             
             result = {
                 "status": "success",
@@ -826,6 +830,75 @@ class GraphicOutlineAgent(BaseAgent):
                 "status": "error",
                 "error": str(e)
             }
+    
+    async def _set_spreadsheet_public_editable(self, spreadsheet_token: str) -> bool:
+        """
+        设置电子表格权限为任何人可编辑
+        
+        Args:
+            spreadsheet_token: 电子表格token
+            
+        Returns:
+            是否设置成功
+        """
+        self.logger.info(f"Setting spreadsheet {spreadsheet_token} permissions to public editable")
+        
+        try:
+            # 获取飞书访问令牌
+            tenant_token = await self.feishu_client.get_tenant_access_token()
+            
+            # 飞书设置权限的API endpoint
+            permission_url = f"https://open.feishu.cn/open-apis/drive/v2/permissions/{spreadsheet_token}/public?type=sheet"
+            headers = {
+                "Authorization": f"Bearer {tenant_token}",
+                "Content-Type": "application/json; charset=utf-8"
+            }
+            
+            # 权限设置参数
+            permission_payload = {
+                "external_access_entity": "open",
+                "security_entity": "anyone_can_edit",
+                "comment_entity": "anyone_can_edit",
+                "share_entity": "anyone",
+                "manage_collaborator_entity": "collaborator_can_edit",
+                "link_share_entity": "anyone_editable",
+                "copy_entity": "anyone_can_edit"
+            }
+            
+            self.logger.info(f"Permission URL: {permission_url}")
+            self.logger.info(f"Permission payload: {permission_payload}")
+            
+            # 发送请求设置权限
+            async with httpx.AsyncClient() as client:
+                permission_response = await client.patch(
+                    permission_url, 
+                    headers=headers, 
+                    json=permission_payload, 
+                    timeout=self.timeout
+                )
+                
+                self.logger.info(f"Permission response status code: {permission_response.status_code}")
+                self.logger.info(f"Permission response text: {permission_response.text}")
+                
+                if permission_response.status_code == 200:
+                    try:
+                        permission_result = permission_response.json()
+                        if permission_result.get("code") == 0:
+                            self.logger.info("Successfully set spreadsheet permissions to anyone can edit")
+                            return True
+                        else:
+                            self.logger.error(f"Failed to set permissions: {permission_result}")
+                            return False
+                    except Exception as e:
+                        self.logger.error(f"Error parsing permission response: {str(e)}")
+                        return False
+                else:
+                    self.logger.error(f"Failed to set permissions, status code: {permission_response.status_code}")
+                    return False
+                    
+        except Exception as e:
+            self.logger.error(f"Error setting spreadsheet permissions: {str(e)}")
+            raise
     
     async def fill_cells_in_sheet(self, spreadsheet_token: str, sheet_id: str, cell_data: Dict[str, Any]) -> dict:
         """
@@ -1152,7 +1225,7 @@ class GraphicOutlineAgent(BaseAgent):
             
             # 构建系统提示词
             system_prompt = f"""### 角色
-你是一位专业的小红书种草图文规划师，擅长为 产品创作极具吸引力的种草类图文笔记。你的任务规划出高互动率的爆款内容的图文规划，而不是视频分镜脚本。
+你是一位专业的小红书种草图文规划师，擅长为 产品创作极具吸引力的种草类图文笔记。你的任务规划出高互动率的爆款内容的图文规划(必须要有10张图文规划的输出)，而不是视频分镜脚本。
 
 ## 图文规划
 图文规划 = 针对图文笔记的创作规划。
@@ -1160,7 +1233,7 @@ class GraphicOutlineAgent(BaseAgent):
 - 静态画面描述（定格的场景、构图、氛围）
 - 简短的配图文案（用于图片上的花字或简短口语化表达，≤20字）
 - 必要的备注（对光线、人物表情、氛围等补充说明）
-- 图片张数要求：必须必须必须15张！！！！!！！！！！
+- 图片张数要求：必须必须必须10张！！！！!！！！！！
 
 ## 产品背景信息
 - 产品名称：{product_name}
@@ -1282,7 +1355,7 @@ XX（图片的文字内容）
 - 内容方向：{content_requirement}
 - 产品背书：{endorsement}
 - 必提内容：{output}
-- 图片张数要求：必须必须必须15张！！！！!！！！！！
+- 图片张数要求：必须必须必须10张！！！！!！！！！！
 
 
 """
