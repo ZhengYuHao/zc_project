@@ -102,7 +102,7 @@ class GraphicOutlineAgent(BaseAgent):
         # 添加特定路由
         self.router.post("/generate", response_model=GraphicOutlineResponse)(self.generate_outline)
         self.router.post("/feishu/sheet", response_model=dict)(self.create_feishu_sheet)
-        self.router.post("      ", response_model=ProcessRequestResponse)(self.process_request_api)
+        self.router.post("/process-request", response_model=ProcessRequestResponse)(self.process_request_api)
         
     async def process(self, input_data: GraphicOutlineRequest) -> GraphicOutlineResponse:
         """
@@ -971,7 +971,7 @@ class GraphicOutlineAgent(BaseAgent):
             "total_words": 0,
             "estimated_time": "5分钟"
         }
-        
+        self.logger.info(f"Aggregating and processing task results  {aggregated_data}")
         # 根据任务结果生成大纲章节
         sections = {}
         
@@ -1383,8 +1383,16 @@ def parse_planting_content(content: str) -> List[Dict[str, str]]:
     Returns:
         解析后的图文规划数据列表
     """
-    # 使用正则表达式匹配图文规划内容
-    pattern = r'图片类型：(.*?)\n图文规划：\n(.*?)\n图片的文字内容：(.*?)\n备注：(.*?)(?=\n\n图片类型：|$)'
+    # 去除内容前后的空白字符
+    content = content.strip()
+    
+    # 如果内容为空，直接返回空列表
+    if not content:
+        return []
+    
+    # 使用更灵活的正则表达式匹配图文规划内容
+    # 修复正则表达式以匹配实际的文本格式
+    pattern = r'图片类型：(.*?)\n图文规划：\n(.*?)\n(.*?)\n备注：(.*?)(?=\n\n图片类型：|\Z)'
     matches = re.findall(pattern, content, re.DOTALL)
     
     result = []

@@ -176,12 +176,45 @@ async def extract_target_audience(request_data: Dict[str, Any]) -> Dict[str, Any
         # 解析结果
         lines = result.strip().split('\n')
         target_audience = ""
+        
         logger.info(f"Parsing lines: {lines}")
         
+        # 使用状态跟踪来处理跨多行的内容
+        current_section = None  # None, "audience"
+        audience_lines = []
+        
         for line in lines:
+            logger.debug(f"Processing line: '{line}'")
+            logger.debug(f"Line bytes: {repr(line)}")
+            
+            # 检查是否是新的部分开始
             if line.startswith("目标人群："):
-                target_audience = line[6:].strip()
-                logger.info(f"Found target audience: {target_audience}")
+                current_section = "audience"
+                # 修复：更安全地提取内容，避免字符丢失
+                prefix = "目标人群："
+                if line.startswith(prefix):
+                    content = line[len(prefix):].strip()
+                    if content:
+                        audience_lines.append(content)
+            elif line.startswith("- "):
+                # 这是内容行
+                if current_section == "audience":
+                    audience_lines.append(line.strip())
+            elif line.strip() == "":
+                # 空行，不改变当前部分
+                pass
+            else:
+                # 其他行，根据当前部分添加
+                if current_section == "audience":
+                    audience_lines.append(line.strip())
+        
+        # 合并行内容
+        target_audience = "\n".join(audience_lines).strip()
+        
+        logger.info(f"Found target audience: {target_audience}")
+        
+        # 添加解析结果检查
+        logger.debug(f"Parse results - Target audience: '{target_audience}'")
         
         response = {
             "target_audience": target_audience if target_audience else f"根据'{topic}'和'{product_highlights}'分析的目标人群",
@@ -246,23 +279,81 @@ async def extract_required_content(request_data: Dict[str, Any]) -> Dict[str, An
         # 解析结果
         lines = result.strip().split('\n')
         required_content = ""
+        target_audience = ""
+        notices = ""
         
         logger.info(f"Parsing lines: {lines}")
         
+        # 使用状态跟踪来处理跨多行的内容
+        current_section = None  # None, "required", "audience", or "notices"
+        required_lines = []
+        audience_lines = []
+        notices_lines = []
+        
         for line in lines:
+            logger.debug(f"Processing line: '{line}'")
+            logger.debug(f"Line bytes: {repr(line)}")
+            
+            # 检查是否是新的部分开始
             if line.startswith("必提内容："):
-                required_content = line[6:].strip()
-                logger.info(f"Found required content: {required_content}")
+                current_section = "required"
+                # 修复：更安全地提取内容，避免字符丢失
+                prefix = "必提内容："
+                if line.startswith(prefix):
+                    content = line[len(prefix):].strip()
+                    if content:
+                        required_lines.append(content)
             elif line.startswith("目标人群："):
-                target_audience = line[6:].strip()
-                logger.info(f"Found target audience: {target_audience}")
+                current_section = "audience"
+                # 修复：更安全地提取内容，避免字符丢失
+                prefix = "目标人群："
+                if line.startswith(prefix):
+                    content = line[len(prefix):].strip()
+                    if content:
+                        audience_lines.append(content)
             elif line.startswith("注意事项："):
-                notices = line[6:].strip()
-                logger.info(f"Found notices: {notices}")
+                current_section = "notices"
+                # 修复：更安全地提取内容，避免字符丢失
+                prefix = "注意事项："
+                if line.startswith(prefix):
+                    content = line[len(prefix):].strip()
+                    if content:
+                        notices_lines.append(content)
+            elif line.startswith("- "):
+                # 这是内容行
+                if current_section == "required":
+                    required_lines.append(line.strip())
+                elif current_section == "audience":
+                    audience_lines.append(line.strip())
+                elif current_section == "notices":
+                    notices_lines.append(line.strip())
+            elif line.strip() == "":
+                # 空行，不改变当前部分
+                pass
+            else:
+                # 其他行，根据当前部分添加
+                if current_section == "required":
+                    required_lines.append(line.strip())
+                elif current_section == "audience":
+                    audience_lines.append(line.strip())
+                elif current_section == "notices":
+                    notices_lines.append(line.strip())
+        
+        # 合并行内容
+        required_content = "\n".join(required_lines).strip()
+        target_audience = "\n".join(audience_lines).strip()
+        notices = "\n".join(notices_lines).strip()
+        
+        logger.info(f"Found required content: {required_content}")
+        logger.info(f"Found target audience: {target_audience}")
+        logger.info(f"Found notices: {notices}")
+        
+        # 添加解析结果检查
+        logger.debug(f"Parse results - Required content: '{required_content}', "
+                    f"Target audience: '{target_audience}', Notices: '{notices}'")
         
         response = {
             "required_content": required_content if required_content else f"必须包含的内容点: {requirements}",
-            
         }
         
         logger.info(f"Extract required content result: {response}")
@@ -348,10 +439,38 @@ async def extract_product_category(request_data: Dict[str, Any]) -> Dict[str, An
         
         logger.info(f"Parsing lines: {lines}")
         
+        # 使用状态跟踪来处理跨多行的内容
+        current_section = None  # None, "category"
+        category_lines = []
+        
         for line in lines:
+            logger.debug(f"Processing line: '{line}'")
+            logger.debug(f"Line bytes: {repr(line)}")
+            
+            # 检查是否是新的部分开始
             if line.startswith("产品品类："):
-                product_category = line[6:].strip()
-                logger.info(f"Found product category: {product_category}")
+                current_section = "category"
+                # 修复：更安全地提取内容，避免字符丢失
+                prefix = "产品品类："
+                if line.startswith(prefix):
+                    content = line[len(prefix):].strip()
+                    if content:
+                        category_lines.append(content)
+            elif line.strip() == "":
+                # 空行，不改变当前部分
+                pass
+            else:
+                # 其他行，根据当前部分添加
+                if current_section == "category":
+                    category_lines.append(line.strip())
+        
+        # 合并行内容
+        product_category = "\n".join(category_lines).strip()
+        
+        logger.info(f"Found product category: {product_category}")
+        
+        # 添加解析结果检查
+        logger.debug(f"Parse results - Product category: '{product_category}'")
         
         response = {
             "product_category": product_category 
@@ -438,16 +557,61 @@ async def extract_selling_points(request_data: Dict[str, Any]) -> Dict[str, Any]
         
         logger.info(f"Parsing lines: {lines}")
         
+        # 使用状态跟踪来处理跨多行的内容
+        current_section = None  # None, "core", or "secondary"
+        core_lines = []
+        secondary_lines = []
+        
         for line in lines:
+            logger.debug(f"Processing line: '{line}'")
+            logger.debug(f"Line bytes: {repr(line)}")
+            
+            # 检查是否是新的部分开始
             if line.startswith("核心卖点："):
-                core_selling_points = line[6:].strip()
-                logger.info(f"Found core selling points: {core_selling_points}")
+                current_section = "core"
+                # 修复：更安全地提取内容，避免字符丢失
+                prefix = "核心卖点："
+                if line.startswith(prefix):
+                    content = line[len(prefix):].strip()
+                    if content:
+                        core_lines.append(content)
             elif line.startswith("次要卖点："):
-                secondary_selling_points = line[6:].strip()
-                logger.info(f"Found secondary selling points: {secondary_selling_points}")
+                current_section = "secondary"
+                # 修复：更安全地提取内容，避免字符丢失
+                prefix = "次要卖点："
+                if line.startswith(prefix):
+                    content = line[len(prefix):].strip()
+                    if content:
+                        secondary_lines.append(content)
+            elif line.startswith("- "):
+                # 这是卖点内容行
+                if current_section == "core":
+                    core_lines.append(line.strip())
+                elif current_section == "secondary":
+                    secondary_lines.append(line.strip())
+            elif line.strip() == "":
+                # 空行，不改变当前部分
+                pass
+            else:
+                # 其他行，根据当前部分添加
+                if current_section == "core":
+                    core_lines.append(line.strip())
+                elif current_section == "secondary":
+                    secondary_lines.append(line.strip())
+        
+        # 合并行内容
+        core_selling_points = "\n".join(core_lines).strip()
+        secondary_selling_points = "\n".join(secondary_lines).strip()
+        
+        logger.info(f"Found core selling points: {core_selling_points}")
+        logger.info(f"Found secondary selling points: {secondary_selling_points}")
+        
+        # 添加解析结果检查
+        logger.debug(f"Parse results - Core selling points: '{core_selling_points}', "
+                    f"Secondary selling points: '{secondary_selling_points}'")
         
         response = {
-            "selling_points": f"核心卖点: {core_selling_points}",
+            "selling_points": f"核心卖点: {core_selling_points}" if core_selling_points else "核心卖点: 未提取到内容",
             "core_selling_points": core_selling_points,
             "secondary_selling_points": secondary_selling_points
         }
@@ -521,13 +685,58 @@ async def extract_product_endorsement(request_data: Dict[str, Any]) -> Dict[str,
         
         logger.info(f"Parsing lines: {lines}")
         
+        # 使用状态跟踪来处理跨多行的内容
+        current_section = None  # None, "endorsement", or "data"
+        endorsement_lines = []
+        data_lines = []
+        
         for line in lines:
+            logger.debug(f"Processing line: '{line}'")
+            logger.debug(f"Line bytes: {repr(line)}")
+            
+            # 检查是否是新的部分开始
             if line.startswith("**产品背书：**"):
-                product_endorsement = line[8:].strip()
-                logger.info(f"Found product endorsement: {product_endorsement}")
+                current_section = "endorsement"
+                # 修复：更安全地提取内容，避免字符丢失
+                prefix = "**产品背书：**"
+                if line.startswith(prefix):
+                    content = line[len(prefix):].strip()
+                    if content:
+                        endorsement_lines.append(content)
             elif line.startswith("**产品数据：**"):
-                product_data = line[8:].strip()
-                logger.info(f"Found product data: {product_data}")
+                current_section = "data"
+                # 修复：更安全地提取内容，避免字符丢失
+                prefix = "**产品数据：**"
+                if line.startswith(prefix):
+                    content = line[len(prefix):].strip()
+                    if content:
+                        data_lines.append(content)
+            elif line.startswith("- "):
+                # 这是内容行
+                if current_section == "endorsement":
+                    endorsement_lines.append(line.strip())
+                elif current_section == "data":
+                    data_lines.append(line.strip())
+            elif line.strip() == "":
+                # 空行，不改变当前部分
+                pass
+            else:
+                # 其他行，根据当前部分添加
+                if current_section == "endorsement":
+                    endorsement_lines.append(line.strip())
+                elif current_section == "data":
+                    data_lines.append(line.strip())
+        
+        # 合并行内容
+        product_endorsement = "\n".join(endorsement_lines).strip()
+        product_data = "\n".join(data_lines).strip()
+        
+        logger.info(f"Found product endorsement: {product_endorsement}")
+        logger.info(f"Found product data: {product_data}")
+        
+        # 添加解析结果检查
+        logger.debug(f"Parse results - Product endorsement: '{product_endorsement}', "
+                    f"Product data: '{product_data}'")
         
         response = {
             "product_endorsement": product_endorsement,
@@ -592,10 +801,38 @@ async def extract_topic(request_data: Dict[str, Any]) -> Dict[str, Any]:
         
         logger.info(f"Parsing lines: {lines}")
         
+        # 使用状态跟踪来处理跨多行的内容
+        current_section = None  # None, "topic"
+        topic_lines = []
+        
         for line in lines:
+            logger.debug(f"Processing line: '{line}'")
+            logger.debug(f"Line bytes: {repr(line)}")
+            
+            # 检查是否是新的部分开始
             if line.startswith("话题："):
-                extracted_topic = line[3:].strip()
-                logger.info(f"Found topic: {extracted_topic}")
+                current_section = "topic"
+                # 修复：更安全地提取内容，避免字符丢失
+                prefix = "话题："
+                if line.startswith(prefix):
+                    content = line[len(prefix):].strip()
+                    if content:
+                        topic_lines.append(content)
+            elif line.strip() == "":
+                # 空行，不改变当前部分
+                pass
+            else:
+                # 其他行，根据当前部分添加
+                if current_section == "topic":
+                    topic_lines.append(line.strip())
+        
+        # 合并行内容
+        extracted_topic = "\n".join(topic_lines).strip()
+        
+        logger.info(f"Found topic: {extracted_topic}")
+        
+        # 添加解析结果检查
+        logger.debug(f"Parse results - Extracted topic: '{extracted_topic}'")
         
         response = {
             "main_topic": extracted_topic 
