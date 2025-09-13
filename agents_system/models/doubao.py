@@ -50,7 +50,7 @@ class DoubaoModel:
         
         try:
             logger.info(f"Calling Doubao model with prompt: {prompt[:50]}...")
-            response = await self.client.post(url, headers=self.headers, json=payload, timeout=60.0)
+            response = await self.client.post(url, headers=self.headers, json=payload, timeout=360.0)
             response.raise_for_status()
             
             result = response.json()
