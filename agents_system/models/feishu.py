@@ -17,6 +17,12 @@ from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+# 添加调试信息，检查settings是否正确加载
+logger.info(f"FEISHU_APP_ID from settings: {settings.FEISHU_APP_ID}")
+logger.info(f"FEISHU_APP_SECRET from settings: {settings.FEISHU_APP_SECRET}")
+logger.info(f"FEISHU_VERIFY_TOKEN from settings: {settings.FEISHU_VERIFY_TOKEN}")
+logger.info(f"FEISHU_ENCRYPT_KEY from settings: {settings.FEISHU_ENCRYPT_KEY}")
+
 
 class DocumentVersionError(Exception):
     """文档版本冲突异常"""
@@ -31,10 +37,13 @@ class FeishuClient:
         self.app_secret = settings.FEISHU_APP_SECRET
         self.verify_token = settings.FEISHU_VERIFY_TOKEN
         self.encrypt_key = settings.FEISHU_ENCRYPT_KEY
-        self.client = httpx.AsyncClient()
+        # 配置客户端，增加超时和基础URL
+        self.client = httpx.AsyncClient(
+            timeout=httpx.Timeout(30.0),
+            base_url="https://open.feishu.cn"
+        )
         self.tenant_access_token = None
         self.token_expire_time = 0
-        logger.info("Initialized FeishuClient")
     
     async def get_tenant_access_token(self) -> str:
         """
@@ -47,7 +56,7 @@ class FeishuClient:
         if self.tenant_access_token and time.time() < self.token_expire_time:
             return self.tenant_access_token
         
-        url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
+        url = "/open-apis/auth/v3/tenant_access_token/internal"
         headers = {"Content-Type": "application/json; charset=utf-8"}
         payload = {
             "app_id": self.app_id,
@@ -55,23 +64,38 @@ class FeishuClient:
         }
         
         try:
-            logger.info("Getting tenant_access_token from Feishu")
+            logger.info(f"Requesting tenant_access_token from {url}")
+            logger.info(f"Request payload: {payload}")
+            
             response = await self.client.post(url, headers=headers, json=payload)
+            
+            logger.info(f"Response status code: {response.status_code}")
+            logger.info(f"Response headers: {dict(response.headers)}")
+            
             response.raise_for_status()
             
             result = response.json()
+            logger.info(f"Response JSON: {result}")
+            
             if result.get("code") != 0:
                 raise Exception(f"Failed to get tenant_access_token: {result}")
             
             self.tenant_access_token = result["tenant_access_token"]
             self.token_expire_time = time.time() + result["expire"] - 60  # 提前60秒过期
-            logger.info("Successfully got tenant_access_token")
             
+            logger.info("Successfully obtained tenant_access_token")
             return self.tenant_access_token
+        except httpx.ConnectError as e:
+            logger.error(f"Connection error when getting tenant_access_token: {str(e)}")
+            logger.error("This might be due to network issues, firewall or proxy settings")
+            raise Exception(f"无法连接到飞书服务器，请检查网络连接: {str(e)}")
+        except httpx.TimeoutException as e:
+            logger.error(f"Timeout error when getting tenant_access_token: {str(e)}")
+            raise Exception(f"请求飞书服务器超时，请检查网络连接: {str(e)}")
         except Exception as e:
             logger.error(f"Error getting tenant_access_token: {str(e)}")
             raise
-    
+        
     async def read_document(self, document_id: str) -> Dict[str, Any]:
         """
         读取飞书文档内容
@@ -83,7 +107,7 @@ class FeishuClient:
             文档内容和元数据
         """
         token = await self.get_tenant_access_token()
-        url = f"https://open.feishu.cn/open-apis/docx/v1/documents/{document_id}"
+        url = f"/open-apis/docx/v1/documents/{document_id}"
         headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json; charset=utf-8"
@@ -109,7 +133,6 @@ class FeishuClient:
                 "document_id": document_id
             }
             
-            logger.info(f"Successfully read document {document_id}")
             return result
         except Exception as e:
             logger.error(f"Error reading document {document_id}: {str(e)}")
@@ -140,7 +163,13 @@ class FeishuClient:
                 logger.warning(f"Document version conflict: expected {expected_revision}, got {current_revision}")
                 raise DocumentVersionError(f"Document version conflict: expected {expected_revision}, got {current_revision}")
         
-        url = f"https://open.feishu.cn/open-apis/docx/v1/documents/{document_id}/blocks"
+        # 首先获取文档的根block_id
+        doc_info = await self.read_document(document_id)
+        # 根据飞书API文档，要向文档添加内容，需要使用文档的document_id作为block_id参数
+        block_id = document_id
+        
+        # 正确的API路径: https://open.feishu.cn/open-apis/docx/v1/documents/:document_id/blocks/:block_id/children
+        url = f"https://open.feishu.cn/open-apis/docx/v1/documents/{document_id}/blocks/{block_id}/children"
         headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json; charset=utf-8"
@@ -158,7 +187,6 @@ class FeishuClient:
                     raise DocumentVersionError(f"Document version conflict when writing: {result}")
                 raise Exception(f"Failed to write document: {result}")
             
-            logger.info(f"Successfully wrote to document {document_id}")
             return True
         except DocumentVersionError:
             raise
@@ -197,7 +225,6 @@ class FeishuClient:
             if result.get("code") != 0:
                 raise Exception(f"Failed to reply message: {result}")
             
-            logger.info(f"Successfully replied to message {message_id}")
             return True
         except Exception as e:
             logger.error(f"Error replying to message {message_id}: {str(e)}")

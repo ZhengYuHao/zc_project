@@ -13,6 +13,7 @@ from models.feishu import get_feishu_client
 from agents.text_reviewer import TextReviewerAgent
 from utils.logger import get_logger
 from config.settings import settings
+from core.request_context import get_request_id
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/feishu")
@@ -33,7 +34,9 @@ async def process_document_task(document_id: str, event: Dict[Any, Any]):
         document_id: 文档ID
         event: 事件数据
     """
-    logger.info(f"Queuing document processing task for {document_id}")
+    # 获取当前请求ID
+    request_id = get_request_id()
+    logger.info(f"Queuing document processing task for {document_id} with request_id {request_id}")
     await document_queues[document_id].put(event)
 
 
@@ -60,7 +63,9 @@ async def feishu_callback(
     body = await request.body()
     body_str = body.decode("utf-8")
     
-    logger.info(f"Received Feishu callback: {body_str[:100]}...")
+    # 获取当前请求ID
+    request_id = get_request_id()
+    logger.info(f"Received Feishu callback with request_id {request_id}: {body_str[:100]}...")
     
     # 验证签名
     if settings.FEISHU_ENCRYPT_KEY:
@@ -71,14 +76,14 @@ async def feishu_callback(
             body_str
         )
         if not is_valid:
-            logger.warning("Feishu callback signature validation failed")
+            logger.warning(f"Feishu callback signature validation failed for request_id {request_id}")
             raise HTTPException(status_code=401, detail="Signature validation failed")
     
     # 解析请求体
     try:
         data = json.loads(body_str)
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse Feishu callback body: {str(e)}")
+        logger.error(f"Failed to parse Feishu callback body for request_id {request_id}: {str(e)}")
         raise HTTPException(status_code=400, detail="Invalid JSON body")
     
     # 处理不同类型的事件
@@ -87,7 +92,7 @@ async def feishu_callback(
     if event_type == "url_verification":
         # 处理首次配置时的URL验证
         challenge = data.get("challenge", "")
-        logger.info("Processing Feishu URL verification")
+        logger.info(f"Processing Feishu URL verification for request_id {request_id}")
         return {"challenge": challenge}
     
     elif event_type == "event_callback":
@@ -96,7 +101,7 @@ async def feishu_callback(
         return await _handle_event_callback(event)
     
     else:
-        logger.warning(f"Unknown Feishu callback type: {event_type}")
+        logger.warning(f"Unknown Feishu callback type: {event_type} for request_id {request_id}")
         return {"message": "OK"}
 
 
@@ -111,7 +116,9 @@ async def _handle_event_callback(event: Dict[Any, Any]) -> Dict[str, str]:
         处理结果
     """
     event_type = event.get("type", "")
-    logger.info(f"Handling Feishu event callback: {event_type}")
+    # 获取当前请求ID
+    request_id = get_request_id()
+    logger.info(f"Handling Feishu event callback: {event_type} with request_id {request_id}")
     
     try:
         if event_type == "message":
@@ -121,10 +128,10 @@ async def _handle_event_callback(event: Dict[Any, Any]) -> Dict[str, str]:
             # 处理文档事件
             return await _handle_document_event(event)
         else:
-            logger.info(f"Unsupported Feishu event type: {event_type}")
+            logger.info(f"Unsupported Feishu event type: {event_type} for request_id {request_id}")
             return {"message": "OK"}
     except Exception as e:
-        logger.error(f"Error handling Feishu event callback: {str(e)}")
+        logger.error(f"Error handling Feishu event callback for request_id {request_id}: {str(e)}")
         return {"message": "Error"}
 
 
@@ -142,7 +149,9 @@ async def _handle_message_event(event: Dict[Any, Any]) -> Dict[str, str]:
     message_id = message.get("message_id", "")
     content = message.get("content", "")
     
-    logger.info(f"Handling Feishu message event: {message_id}")
+    # 获取当前请求ID
+    request_id = get_request_id()
+    logger.info(f"Handling Feishu message event: {message_id} with request_id {request_id}")
     
     # 这里可以调用文本审稿智能体处理消息内容
     # 示例实现，实际应用中可能需要解析content字段
@@ -162,7 +171,9 @@ async def _handle_document_event(event: Dict[Any, Any]) -> Dict[str, str]:
         处理结果
     """
     document_id = event.get("document_id", "")
-    logger.info(f"Handling Feishu document event: {document_id}")
+    # 获取当前请求ID
+    request_id = get_request_id()
+    logger.info(f"Handling Feishu document event: {document_id} with request_id {request_id}")
     
     # 将文档处理任务加入队列，防止并发处理
     await process_document_task(document_id, event)

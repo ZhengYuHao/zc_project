@@ -1,0 +1,16 @@
+
+services:
+  agents-system:
+    build: .
+    ports:
+      - "8847:8847"
+    volumes:
+      - /home/agent/zc_jxnu_agents/docker_model_log:/app/logs
+      - ./data:/app/data
+    environment:
+      - DOUBAO_API_KEY=${DOUBAO_API_KEY}
+      - FEISHU_APP_ID=${FEISHU_APP_ID}
+      - FEISHU_APP_SECRET=${FEISHU_APP_SECRET}
+      - DOUBAO_MODEL_NAME=${DOUBAO_MODEL_NAME}
+    env_file:
+      - .env

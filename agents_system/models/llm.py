@@ -46,20 +46,20 @@ class QwenModel:
                 "prompt": prompt
             },
             "parameters": {
-                "max_tokens": kwargs.get("max_tokens", 1024),
+                "max_tokens": kwargs.get("max_tokens", 8000),
                 "temperature": kwargs.get("temperature", 0.8),
                 **kwargs
             }
         }
         
         try:
-            logger.info(f"Calling Qwen model with prompt: {prompt[:50]}...")
+            logger.info(f"Calling Qwen model with prompt: {prompt}...")
             response = await self.client.post(url, headers=self.headers, json=payload, timeout=30.0)
             response.raise_for_status()
             
             result = response.json()
             generated_text = result["output"]["text"]
-            logger.info("Successfully generated text with Qwen model")
+            logger.info(f"Successfully generated text with Qwen model{result}...")
             
             return generated_text
         except Exception as e:

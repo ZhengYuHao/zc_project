@@ -9,6 +9,15 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.settings import settings
 
+# 尝试导入请求上下文模块
+try:
+    from core.request_context import get_request_id
+    REQUEST_CONTEXT_AVAILABLE = True
+except ImportError:
+    REQUEST_CONTEXT_AVAILABLE = False
+    def get_request_id():
+        return "unknown"
+
 
 class AgentLogger:
     """统一的日志模块，包含模块名、行号、时间戳等属性"""
@@ -21,7 +30,7 @@ class AgentLogger:
         if not self.logger.handlers:
             # 创建日志格式，包含时间戳、模块名等信息
             formatter = logging.Formatter(
-                '%(asctime)s - %(name)s - %(levelname)s - %(location_info)s - %(message)s'
+                '%(asctime)s - %(name)s - %(levelname)s - %(location_info)s - [%(request_id)s] - %(message)s'
             )
             
             # 控制台处理器
@@ -38,7 +47,7 @@ class AgentLogger:
                     if log_dir and not os.path.exists(log_dir):
                         os.makedirs(log_dir)
                     
-                    file_handler = logging.FileHandler(log_path)
+                    file_handler = logging.FileHandler(log_path, encoding='utf-8')
                     file_handler.setFormatter(formatter)
                     self.logger.addHandler(file_handler)
     
@@ -62,6 +71,11 @@ class AgentLogger:
                 location_info = "unknown:unknown:0"
                 formatted_message = message
             
+            # 获取请求ID
+            request_id = get_request_id() if REQUEST_CONTEXT_AVAILABLE else "unknown"
+            if request_id is None:
+                request_id = "unknown"
+            
             # 创建并处理日志记录，使用完整的参数列表消除编辑器警告
             record = self.logger.makeRecord(
                 self.logger.name,     # name
@@ -77,6 +91,8 @@ class AgentLogger:
             )
             # 添加自定义的位置信息字段
             record.location_info = location_info
+            # 添加请求ID字段
+            record.request_id = request_id
             self.logger.handle(record)
         except Exception as e:
             # 如果获取调用栈信息失败，回退到基本日志记录
