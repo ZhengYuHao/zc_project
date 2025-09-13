@@ -18,7 +18,7 @@ from models.doubao import call_doubao
 from config.settings import settings
 from utils.logger import get_logger
 from utils.cell_filler import CellFiller
-from agents.task_processor import task_processor
+from agents_system.core.task_processor import task_processor
 from core.request_context import get_request_id
 
 
@@ -131,14 +131,14 @@ class GraphicOutlineAgent(BaseAgent):
             ProcessRequest处理结果
         """
         self.logger.info("Processing process_request API request")
-        
+
         try:
             # 转换请求数据为process_request所需的格式
             request_data = {
                 "topic": request.topic,
                 "product_highlights": request.product_highlights,
                 "note_style": request.note_style,
-                "product_name": request.product_name,
+                "product_name": request.product_name,   
                 "direction": request.direction,
                 "blogger_link": request.blogger_link,
                 "requirements": request.requirements,

@@ -13,7 +13,7 @@ from typing import Dict, Any
 # 添加项目根目录到Python路径
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from agents.task_processor import (
+from agents_system.core.task_processor import (
     task_processor,
     extract_target_audience,
     extract_required_content,
