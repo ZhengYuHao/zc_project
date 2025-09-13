@@ -2,29 +2,34 @@
 
 一个基于Python、FastAPI和Pydantic的智能体集合项目，用于模块化管理多个子智能体，统一处理功能。
 
-## 项目结构
+## 目录结构
 
 ```
 agents_system/
-├── agents/                 # 智能体实现目录
-│   ├── text_reviewer.py    # 文本审稿智能体
+├── agents/                    # 智能体实现目录
+│   ├── text_reviewer.py       # 文本审稿智能体
 │   └── graphic_outline_agent.py  # 图文大纲生成智能体
-├── config/                 # 配置文件目录
-│   └── settings.py         # 系统配置
-├── core/                   # 核心模块目录
-│   ├── base_agent.py       # 智能体基类
-│   ├── registry.py         # 智能体注册机制
-│   └── feishu_callback.py  # 飞书回调处理
-├── models/                 # 模型实现目录
-│   ├── doubao.py           # 豆包大模型调用接口
-│   ├── feishu.py           # 飞书API客户端
-│   └── llm.py              # 大模型调用接口
-├── utils/                  # 工具类目录
-│   ├── ac_automaton.py     # AC自动机实现
-│   ├── logger.py           # 日志模块
-│   └── xlsx_parser.py      # Excel解析器
-├── main.py                 # 项目入口文件
-└── test_graphic_outline.py # 图文大纲生成智能体测试脚本
+├── config/                    # 配置文件目录
+│   └── settings.py            # 系统配置
+├── core/                      # 核心模块目录
+│   ├── base_agent.py          # 智能体基类
+│   ├── registry.py            # 智能体注册机制
+│   ├── feishu_callback.py     # 飞书回调处理
+│   ├── request_context.py     # 请求上下文管理
+│   ├── request_middleware.py  # 请求中间件
+│   └── feishu_callback.py     # 飞书回调处理
+├── models/                    # 模型实现目录
+│   ├── doubao.py              # 豆包大模型调用接口
+│   ├── feishu.py              # 飞书API客户端
+│   └── llm.py                 # 大模型调用接口
+├── utils/                     # 工具类目录
+│   ├── ac_automaton.py        # AC自动机实现
+│   ├── logger.py              # 日志模块
+│   ├── xlsx_parser.py         # Excel解析器
+│   ├── cell_filler.py         # 表格单元填充器
+│   └── check_excel.py         # Excel检查工具
+├── main.py                    # 项目入口文件
+└── test/                      # 测试文件目录
 ```
 
 ## 智能体介绍
@@ -67,58 +72,66 @@ API接口：
 
 ## 环境配置
 
-1. 安装依赖：
-   ```bash
-   pip install -r requirements.txt
-   ```
+### 1. 安装依赖：
+```bash
+pip install -r requirements.txt
+```
 
-2. 配置环境变量：
-   创建 `.env` 文件并配置相关参数：
-   ```
-   # 项目配置
-   PROJECT_NAME=Agents System
-   PROJECT_VERSION=1.0.0
-   DEBUG=True
-   
-   # 豆包大模型配置
-   DOUBAO_API_KEY=your_doubao_api_key
-   DOUBAO_MODEL_NAME=your_doubao_model_name
-   
-   # 飞书配置
-   FEISHU_APP_ID=your_feishu_app_id
-   FEISHU_APP_SECRET=your_feishu_app_secret
-   FEISHU_VERIFY_TOKEN=your_feishu_verify_token
-   FEISHU_ENCRYPT_KEY=your_feishu_encrypt_key
-   
-   # 日志配置
-   LOG_LEVEL=INFO
-   LOG_FILE=logs/agents_system.log
-   ```
+### 2. 配置环境变量：
+创建 `.env` 文件并配置相关参数：
+```env
+# 项目配置
+PROJECT_NAME=Agents System
+PROJECT_VERSION=1.0.0
+DEBUG=True
+HOST=0.0.0.0
+PORT=8000
+
+# 豆包大模型配置
+DOUBAO_API_KEY=your_doubao_api_key
+DOUBAO_MODEL_NAME=your_doubao_model_name
+
+# 飞书配置
+FEISHU_APP_ID=your_feishu_app_id
+FEISHU_APP_SECRET=your_feishu_app_secret
+FEISHU_VERIFY_TOKEN=your_feishu_verify_token
+FEISHU_ENCRYPT_KEY=your_feishu_encrypt_key
+
+# 日志配置
+LOG_LEVEL=INFO
+LOG_FILE=logs/agents_system.log
+
+# 图文大纲智能体配置
+GRAPHIC_OUTLINE_DEFAULT_STYLE=标准
+GRAPHIC_OUTLINE_LLM_MODEL=doubao
+GRAPHIC_OUTLINE_MAX_RETRIES=3
+GRAPHIC_OUTLINE_TIMEOUT=30
+GRAPHIC_OUTLINE_TEMPLATE_SPREADSHEET_TOKEN=your_template_spreadsheet_token
+```
 
 ## 运行项目
 
+### 直接运行：
 ```bash
+cd agents_system
 python main.py
 ```
 
-## 测试智能体
-
-### 测试图文大纲生成智能体
-
+### Docker容器化运行：
 ```bash
-python test_graphic_outline.py
+# 构建并运行
+docker-compose up --build
+
+# 后台运行
+docker-compose up --build -d
 ```
 
-## API文档
+## 项目特性
 
-项目运行后，可通过以下地址访问API文档：
-
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
-
-## 开发新智能体
-
-1. 在 `agents/` 目录下创建新的智能体文件
-2. 继承 `BaseAgent` 基类并实现抽象方法
-3. 在 `main.py` 中注册新智能体
-4. 实现具体业务逻辑
+1. **模块化设计**：采用模块化架构，便于扩展和维护
+2. **智能体注册机制**：通过注册机制统一管理智能体
+3. **多平台集成**：支持飞书API集成
+4. **大模型支持**：支持豆包等大模型API
+5. **日志追踪**：基于请求ID的全链路日志追踪
+6. **容器化部署**：支持Docker容器化部署
+7. **配置管理**：基于Pydantic的环境配置管理
