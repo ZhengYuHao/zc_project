@@ -7,6 +7,7 @@ import httpx
 import re
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
+from core.request_context import get_request_id
 
 # 添加项目根目录到Python路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -18,6 +19,7 @@ from config.settings import settings
 from utils.logger import get_logger
 from utils.cell_filler import CellFiller
 from agents.task_processor import task_processor
+from core.request_context import get_request_id
 
 
 class GraphicOutlineRequest(BaseModel):
@@ -38,6 +40,7 @@ class GraphicOutlineResponse(BaseModel):
     outline_data: Dict[str, Any]
     document_id: str
     spreadsheet_token: str
+    request_id: Optional[str] = None
 
 
 class ExternalAPIResponse(BaseModel):
@@ -81,6 +84,7 @@ class ProcessRequestResponse(BaseModel):
     processed_data: Optional[Dict[str, Any]] = None
     spreadsheet: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
+    request_id: Optional[str] = None
 
 
 class GraphicOutlineAgent(BaseAgent):
@@ -150,7 +154,8 @@ class GraphicOutlineAgent(BaseAgent):
                 task_results=result.get("task_results"),
                 processed_data=result.get("processed_data"),
                 spreadsheet=result.get("spreadsheet"),
-                error=result.get("error")
+                error=result.get("error"),
+                request_id=result.get("request_id")
             )
             
             self.logger.info("Successfully processed process_request API request")
@@ -160,7 +165,8 @@ class GraphicOutlineAgent(BaseAgent):
             self.logger.error(f"Error processing process_request API request: {str(e)}")
             return ProcessRequestResponse(
                 status="error",
-                error=str(e)
+                error=str(e),
+                request_id=None
             )
     
     async def process_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
@@ -174,6 +180,9 @@ class GraphicOutlineAgent(BaseAgent):
             处理结果
         """
         self.logger.info("Processing graphic outline request")
+        
+        # 获取当前请求ID
+        request_id = get_request_id()
         
         try:
             # 并发执行七个任务
@@ -214,7 +223,8 @@ class GraphicOutlineAgent(BaseAgent):
                 "status": "success",
                 "task_results": task_results,
                 "processed_data": processed_data,
-                "spreadsheet": spreadsheet_result
+                "spreadsheet": spreadsheet_result,
+                "request_id": request_id
             }
             
             self.logger.info("Successfully processed graphic outline request")
@@ -224,7 +234,8 @@ class GraphicOutlineAgent(BaseAgent):
             self.logger.error(f"Error processing graphic outline request: {str(e)}")
             return {
                 "status": "error",
-                "error": str(e)
+                "error": str(e),
+                "request_id": request_id
             }
     
     async def generate_outline(self, request: GraphicOutlineRequest) -> GraphicOutlineResponse:
@@ -257,7 +268,8 @@ class GraphicOutlineAgent(BaseAgent):
             response = GraphicOutlineResponse(
                 outline_data=outline_data,
                 document_id=spreadsheet_token,  # 电子表格使用spreadsheet_token作为标识
-                spreadsheet_token=spreadsheet_token
+                spreadsheet_token=spreadsheet_token,
+                request_id=None
             )
             
             self.logger.info(f"Successfully generated outline for topic: {request.topic}")
@@ -465,29 +477,6 @@ class GraphicOutlineAgent(BaseAgent):
         self.logger.info(f"Populating spreadsheet data for spreadsheet: {spreadsheet_token}")
         
         try:
-            # agent = GraphicOutlineAgent()
-        
-            # # 准备测试数据
-            # processed_data = {
-            #     "topic": "夏季护肤指南",
-            #     "product_name": "水润防晒霜",
-            #     "product_highlights": "防晒、保湿、温和配方",
-            #     "note_style": "种草",
-            #     "requirements": "需要包含使用前后对比，适合敏感肌",
-            #     "direction": "重点介绍防晒效果和使用感受",
-            #     "blogger_link": "https://xiaohongshu.com/user/12345",
-            #     "sections": {
-            #         "target_audience": "适合户外活动较多的年轻女性",
-            #         "required_content": "需要展示防晒效果和使用感受",
-            #         "blogger_style": "小红书风格，轻松活泼",
-            #         "product_category": "护肤品",
-            #         "selling_points": "防晒指数高，温和不刺激，保湿效果好",
-            #         "product_endorsement": "专业护肤品牌",
-            #         "main_topic": "夏季防晒的重要性"
-            #     },
-            #     "total_words": 1000,
-            #     "estimated_time": "5分钟"
-            # }
             
             # 测试种草图文规划生成
             planting_content = await self._generate_planting_content(outline_data)
@@ -559,20 +548,6 @@ class GraphicOutlineAgent(BaseAgent):
                     
                     row += 1
             
-            # 构造所有单元格数据
-            # all_cell_data = {}
-            # for i, image_data in enumerate(planting_data):
-            #     row_index = 13 + i
-            #     all_cell_data.update({
-            #         f"A{row_index}": image_data['image_type'],
-            #         f"B{row_index}": image_data['planning'],
-            #         f"C{row_index}": image_data['caption'],
-            #         f"D{row_index}": image_data['remark']
-            #     })
-
-# 一次性填充所有数据
-# await self.fill_cells_in_sheet(spreadsheet_token, sheet_id, all_cell_data)
-            # 统一设置单元格格式，确保字体一致
             await self._set_cell_format(spreadsheet_token, sheet_id, tenant_token, ["B1", "B2"])
             
             # 使用fill_cells_in_sheet方法填充数据
@@ -788,9 +763,8 @@ class GraphicOutlineAgent(BaseAgent):
         """
         self.logger.info("Creating Feishu sheet")
         
-        
-        
-        
+        # 获取当前请求ID
+        request_id = get_request_id()
         
         try:
             # 从请求中提取数据
@@ -800,8 +774,7 @@ class GraphicOutlineAgent(BaseAgent):
             # 基于模板创建飞书电子表格
             spreadsheet_token, sheet_id = await self._create_spreadsheet_from_template(topic)
             
-            # 填充数据到电子表格（仅当fill_outline_data为True时）
-            
+            # 填充数据到电子表格
             await self._populate_spreadsheet_data(spreadsheet_token, sheet_id, outline_data)
             
             
@@ -818,7 +791,7 @@ class GraphicOutlineAgent(BaseAgent):
                 "status": "success",
                 "spreadsheet_token": spreadsheet_token,
                 "sheet_id": sheet_id,
-                "message": "Successfully created Feishu sheet"
+                "request_id": request_id
             }
             
             self.logger.info(f"Successfully created Feishu sheet: {spreadsheet_token}")
@@ -828,7 +801,8 @@ class GraphicOutlineAgent(BaseAgent):
             self.logger.error(f"Error creating Feishu sheet: {str(e)}")
             return {
                 "status": "error",
-                "error": str(e)
+                "error": str(e),
+                "request_id": request_id
             }
     
     async def _set_spreadsheet_public_editable(self, spreadsheet_token: str) -> bool:
@@ -975,41 +949,22 @@ class GraphicOutlineAgent(BaseAgent):
         # 根据任务结果生成大纲章节
         sections = {}
         
-        # 添加目标人群分析章节
-        if "target_audience_extractor" in aggregated_data:
-            audience_data = aggregated_data["target_audience_extractor"]
-            sections["target_audience"] = audience_data.get("target_audience", "")
+        # 定义需要处理的提取器映射关系
+        extractor_mapping = {
+            "target_audience_extractor": "target_audience",
+            "required_content_extractor": "required_content", 
+            "blogger_style_extractor": "blogger_style",
+            "product_category_extractor": "product_category",
+            "selling_points_extractor": "selling_points",
+            "product_endorsement_extractor": "product_endorsement",
+            "topic_extractor": "main_topic"
+        }
         
-        # 添加必提内容章节
-        if "required_content_extractor" in aggregated_data:
-            content_data = aggregated_data["required_content_extractor"]
-            sections["required_content"] = content_data.get("required_content", "")
-        
-        # 添加达人风格理解章节
-        if "blogger_style_extractor" in aggregated_data:
-            style_data = aggregated_data["blogger_style_extractor"]
-            sections["blogger_style"] = style_data.get("blogger_style", "")
-        
-        # 添加产品品类章节
-        if "product_category_extractor" in aggregated_data:
-            category_data = aggregated_data["product_category_extractor"]
-            sections["product_category"] = category_data.get("product_category", "")
-        
-        # 添加卖点章节
-        if "selling_points_extractor" in aggregated_data:
-            selling_points_data = aggregated_data["selling_points_extractor"]
-            sections["selling_points"] = selling_points_data.get("selling_points", "")
-        
-        # 添加产品背书章节
-        if "product_endorsement_extractor" in aggregated_data:
-            endorsement_data = aggregated_data["product_endorsement_extractor"]
-            sections["product_endorsement"] = endorsement_data.get("endorsement_type", "")
-        
-        # 添加话题章节
-        if "topic_extractor" in aggregated_data:
-            topic_data = aggregated_data["topic_extractor"]
-            sections["main_topic"] = topic_data.get("main_topic", "")
-        
+        # 统一处理所有提取器数据
+        for extractor_key, section_key in extractor_mapping.items():
+            if extractor_key in aggregated_data:
+                extractor_data = aggregated_data[extractor_key]
+                sections[section_key] = extractor_data.get(section_key, "")
         
         processed_outline["sections"] = sections
         processed_outline["total_words"] = sum(len(str(content)) for content in sections.values())

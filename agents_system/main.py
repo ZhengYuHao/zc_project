@@ -12,6 +12,7 @@ from agents.text_reviewer import TextReviewerAgent
 from agents.graphic_outline_agent import GraphicOutlineAgent
 from core.feishu_callback import router as feishu_router
 from utils.logger import get_logger
+from core.request_middleware import RequestIDMiddleware
 
 logger = get_logger(__name__)
 
@@ -22,7 +23,10 @@ app = FastAPI(
     debug=settings.DEBUG
 )
 
-# 添加中间件
+# 添加请求ID中间件（放在最外层）
+app.add_middleware(RequestIDMiddleware)
+
+# 添加CORS中间件
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

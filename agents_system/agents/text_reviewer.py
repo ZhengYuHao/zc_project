@@ -11,6 +11,7 @@ from core.base_agent import BaseAgent
 from models.doubao import get_doubao_model
 from models.feishu import get_feishu_client, DocumentVersionError
 from utils.ac_automaton import ACAutomaton
+from core.request_context import get_request_id
 
 
 class TextReviewRequest(BaseModel):
@@ -26,6 +27,7 @@ class TextReviewResponse(BaseModel):
     corrected_text: str
     errors: Optional[list] = None
     suggestions: Optional[list] = None
+    request_id: Optional[str] = None
 
 
 class FeishuDocumentRequest(BaseModel):
@@ -103,6 +105,9 @@ class TextReviewerAgent(BaseAgent):
         """
         self.logger.info(f"Reviewing text: {request.text[:50]}...")
         
+        # 获取当前请求ID
+        request_id = get_request_id()
+        
         # 使用AC自动机检测并标记违禁词
         marked_text = self._mark_prohibited_words(request.text)
         self.logger.info(f"Marked text: {marked_text}")
@@ -143,7 +148,8 @@ class TextReviewerAgent(BaseAgent):
             original_text=request.text,
             corrected_text=corrected_text,
             errors=[],  # 在实际应用中可以详细列出错误
-            suggestions=[]  # 在实际应用中可以提供改进建议
+            suggestions=[],  # 在实际应用中可以提供改进建议
+            request_id=request_id
         )
         
         self.logger.info("Text review completed")
@@ -192,6 +198,9 @@ class TextReviewerAgent(BaseAgent):
         """
         document_id = request.document_id
         self.logger.info(f"Processing Feishu document: {document_id}")
+        
+        # 获取当前请求ID
+        request_id = get_request_id()
         
         # 获取文档锁，防止同一文档并发处理
         if document_id not in self.document_locks:
@@ -253,7 +262,8 @@ class TextReviewerAgent(BaseAgent):
                     "document_id": document_id,
                     "revision": doc_revision,
                     "original_text": original_text,
-                    "corrected_text": review_result.corrected_text
+                    "corrected_text": review_result.corrected_text,
+                    "request_id": request_id
                 }
                 
                 self.logger.info(f"Successfully processed Feishu document: {document_id}")
@@ -265,14 +275,16 @@ class TextReviewerAgent(BaseAgent):
                     "status": "conflict",
                     "document_id": document_id,
                     "error": "Document was modified during processing. Please try again.",
-                    "details": str(e)
+                    "details": str(e),
+                    "request_id": request_id
                 }
             except Exception as e:
                 self.logger.error(f"Error processing Feishu document {document_id}: {str(e)}")
                 return {
                     "status": "error",
                     "document_id": document_id,
-                    "error": str(e)
+                    "error": str(e),
+                    "request_id": request_id
                 }
     
     def _extract_text_from_document(self, doc_content: dict) -> str:
@@ -357,6 +369,9 @@ class TextReviewerAgent(BaseAgent):
         """
         self.logger.info(f"Processing Feishu message: {request.message_id}")
         
+        # 获取当前请求ID
+        request_id = get_request_id()
+        
         try:
             # 创建审稿请求
             review_request = TextReviewRequest(
@@ -374,7 +389,8 @@ class TextReviewerAgent(BaseAgent):
                 "status": "success",
                 "message_id": request.message_id,
                 "original_text": request.text,
-                "corrected_text": review_result.corrected_text
+                "corrected_text": review_result.corrected_text,
+                "request_id": request_id
             }
             
             self.logger.info(f"Successfully processed Feishu message: {request.message_id}")
@@ -385,5 +401,6 @@ class TextReviewerAgent(BaseAgent):
             return {
                 "status": "error",
                 "message_id": request.message_id,
-                "error": str(e)
+                "error": str(e),
+                "request_id": request_id
             }
