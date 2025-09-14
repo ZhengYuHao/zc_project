@@ -95,7 +95,7 @@ class TextReviewerAgent(BaseAgent):
     
     async def review_text(self, request: TextReviewRequest) -> TextReviewResponse:
         """
-        审核文本中的错别字和语言逻辑问题
+        对文本进行审稿
         
         Args:
             request: 文本审稿请求
@@ -103,14 +103,15 @@ class TextReviewerAgent(BaseAgent):
         Returns:
             文本审稿结果
         """
-        self.logger.info(f"Reviewing text: {request.text[:50]}...")
+        self.logger.info(f"Reviewing text with DeepSeek model: {request.text[:50]}...")
         
         # 获取当前请求ID
         request_id = get_request_id()
         
         # 使用AC自动机检测并标记违禁词
+        self.logger.info(f"[违禁词处理前] 文本: {request.text}")
         marked_text = self._mark_prohibited_words(request.text)
-        self.logger.info(f"Marked text: {marked_text}")
+        self.logger.info(f"[违禁词处理后] 文本: {marked_text}")
         # 构建提示词
         prompt = f"""
         请作为专业内容审核员，对以下文本进行全面审查和优化：
@@ -121,7 +122,7 @@ class TextReviewerAgent(BaseAgent):
     一、核心审核要求
     ​错别字纠正​：精准识别并修正所有拼写错误、错别字和语法错误
     语句通顺​：确保句子结构合理，表达清晰流畅，语义相近的句子删除。
-    ​违禁词处理​：对原文中{{}}标记的违禁词必须替换（只能替换不能删除），替换后删除{{}}标记。
+    ​违禁词处理​：替换所有用{{}}标记的违禁词（只能替换不能删除），替换后删除{{}}标记。
     ​逻辑优化​：调整内容逻辑顺序，确保产品卖点介绍符合使用流程（如洗烘套装先洗衣机后烘干机）和认知逻辑（如康师傅喝开水先工艺后口感）
     ​口语化转换​：将书面化表达转换为自然口语表述（如"承托"改为"支撑"等），特别适合口播场景
     ​原意保持​：所有修改不得改变原文核心含义和意图
@@ -134,9 +135,9 @@ class TextReviewerAgent(BaseAgent):
     采用千万级专业词库和数十亿训练语料的检测标准
     符合内容安全与合规性要求
     保持语言自然流畅且适合口语传播
-    ​请现在开始审核并返回修改后的文本
+    ​请现在开始审核并返回修改后的文本。如果文本已经完美无需修改，请直接返回原始文本内容，不要添加任何说明。
         """
-        #在完整的修改后的文本之后，添加一段详细的修改说明，每一处的违禁词替代或者修改都必须做说明,对语句的优化和删出也得详细说明。
+        
         if request.style:
             prompt += f"\n5. 文本风格要求：{request.style}"
         
@@ -155,35 +156,89 @@ class TextReviewerAgent(BaseAgent):
         self.logger.info("Text review completed")
         return response
     
-    def _mark_prohibited_words(self, text: str) -> str:
+    def _extract_text_from_document(self, doc_content: dict) -> str:
         """
-        使用AC自动机检测文本中的违禁词，并用{}标记
+        从飞书文档内容中提取文本
         
         Args:
-            text: 要检测的文本
+            doc_content: 飞书文档内容
             
         Returns:
-            标记了违禁词的文本
+            提取的文本内容
         """
-        if not self.ac_automaton:
-            self.logger.warning("AC自动机未初始化，无法检测违禁词")
+        if not doc_content:
+            self.logger.warning("文档内容为空")
+            return ""
+        
+        # 直接尝试提取所有文本内容
+        def extract_all_text(obj):
+            """递归提取对象中的所有文本"""
+            texts = []
+            if isinstance(obj, dict):
+                for key, value in obj.items():
+                    if key == "content" and isinstance(value, str):
+                        texts.append(value)
+                    elif isinstance(value, (dict, list)):
+                        texts.extend(extract_all_text(value))
+            elif isinstance(obj, list):
+                for item in obj:
+                    texts.extend(extract_all_text(item))
+            return texts
+        
+        # 提取所有文本
+        all_texts = extract_all_text(doc_content)
+        extracted_text = "\n".join(all_texts).strip()
+        
+        self.logger.info(f"提取到的文本长度: {len(extracted_text)}")
+        if len(extracted_text) > 100:
+            self.logger.info(f"提取到的文本前100个字符: {extracted_text[:100]}")
+        else:
+            self.logger.info(f"提取到的文本: {extracted_text}")
+        
+        return extracted_text
+    
+    def _mark_prohibited_words(self, text: str) -> str:
+        """
+        使用AC自动机检测并标记违禁词
+        
+        Args:
+            text: 输入文本
+            
+        Returns:
+            标记后的文本
+        """
+        if not text or not self.ac_automaton:
+            if not self.ac_automaton:
+                self.logger.warning("AC自动机未初始化，无法检测违禁词")
             return text
-
+            
+        # 查找所有匹配的违禁词
         matches = self.ac_automaton.search(text)
+        
+        # 输出违禁词匹配日志
+        if matches:
+            self.logger.info(f"发现违禁词: {matches}")
+            for word, start, end in matches:
+                self.logger.info(f"匹配到违禁词: {word} 位置: [{start}:{end}] 上下文: {text[max(0, start-10):start]}[{word}]{text[end:end+10]}")
+        else:
+            self.logger.info("未发现违禁词")
+        
         if not matches:
             return text
-
-        # Sort matches by start index descending to avoid offset issues
+        
+        # 按照位置逆序排列，从后往前替换，避免位置偏移
         matches.sort(key=lambda x: x[1], reverse=True)
-
-        # Use a list for efficient insertions
-        result = list(text)
-
+        
+        # 标记违禁词
+        marked_text = text
         for word, start, end in matches:
-            # Replace the word with the wrapped version
-            result[start:end] = ['{'] + list(word) + ['}']
-
-        return ''.join(result)
+            marked_text = marked_text[:start] + f"{{{word}}}" + marked_text[end:]
+            self.logger.info(f"替换违禁词: {word} 位置: {start} 新文本片段: ...{marked_text[max(0, start-20):start+25]}...")
+        
+        self.logger.info(f"原始文本: {text[:100]}{'...' if len(text) > 100 else ''}")
+        self.logger.info(f"标记后文本: {marked_text[:100]}{'...' if len(marked_text) > 100 else ''}")
+        
+        return marked_text
     
     async def process_feishu_document(self, request: FeishuDocumentRequest) -> dict:
         """
@@ -223,7 +278,7 @@ class TextReviewerAgent(BaseAgent):
                 if doc_type == "sheet":
                     # 处理电子表格
                     self.logger.info(f"Processing Feishu spreadsheet: {document_id}")
-                    return await self._process_feishu_spreadsheet(document_id, request_id)
+                    return await self._process_feishu_spreadsheet(document_id, request_id or "")
                 
                 # 从文档内容中提取文本
                 original_text = self._extract_text_from_document(doc_content)
@@ -379,19 +434,23 @@ class TextReviewerAgent(BaseAgent):
                     
                     if write_result.get("code") != 0:
                         raise Exception(f"Failed to write data to spreadsheet: {write_result}")
+                    
+                    # 返回结果
+                    return {
+                        "status": "success",
+                        "document_id": spreadsheet_token,
+                        "request_id": request_id
+                    }
                 else:
                     # 从二维数组中提取所有文本及其位置
-                    cell_data = []  # 存储单元格数据 [{ "cell_ref": "A1", "content": "内容" }, ...]
+                    cell_data = {}  # 存储单元格数据 { "A1": "内容", "B1": "内容", ...}
                     values = value_ranges[0].get("values", [])
                     for row_index, row in enumerate(values):
                         for col_index, cell in enumerate(row):
-                            if cell and isinstance(cell, str):
+                            if cell and isinstance(cell, str) and cell.strip():
                                 # 将行列索引转换为单元格引用 (如 0,0 -> A1)
                                 cell_ref = self._index_to_cell_ref(col_index, row_index)
-                                cell_data.append({
-                                    "cell_ref": cell_ref,
-                                    "content": cell
-                                })
+                                cell_data[cell_ref] = cell.strip()
                     
                     if not cell_data:
                         original_text = "示例文本内容"
@@ -420,90 +479,139 @@ class TextReviewerAgent(BaseAgent):
                         
                         if write_result.get("code") != 0:
                             raise Exception(f"Failed to write data to spreadsheet: {write_result}")
-                    else:
-                        # 并发处理所有单元格的文本
-                        async def process_cell_item(cell_item):
-                            """处理单个单元格的文本"""
-                            # 创建审稿请求
-                            review_request = TextReviewRequest(
-                                text=cell_item["content"],
-                                language="zh"
-                            )
-                            
-                            # 处理文本
-                            review_result = await self.review_text(review_request)
-                            
-                            # 提取修改后的文本内容，去除可能包含的提示词或其他说明
-                            corrected_text = review_result.corrected_text
-                            
-                            # 如果响应包含特定的提示词相关标识，则只取第一部分
-                            # 检查是否包含提示词中的关键词
-                            if any(keyword in corrected_text for keyword in [
-                                "请作为专业内容审核员", 
-                                "核心审核要求", 
-                                "违禁词处理", 
-                                "请现在开始审核"
-                            ]):
-                                # 尝试提取实际的文本内容，排除提示词部分
-                                lines = corrected_text.split('\n')
-                                actual_text_lines = []
-                                start_collecting = False
-                                
-                                for line in lines:
-                                    # 当遇到明显不属于正文的内容时停止收集
-                                    if any(keyword in line for keyword in [
-                                        "核心审核要求", 
-                                        "输出格式要求", 
-                                        "审核标准参考"
-                                    ]):
-                                        break
-                                    
-                                    # 开始收集正文内容
-                                    if not start_collecting and line.strip() and not line.startswith((' ', '​', '\t')):
-                                        start_collecting = True
-                                    
-                                    if start_collecting:
-                                        actual_text_lines.append(line)
-                                
-                                # 如果成功提取到内容，则使用提取的内容
-                                if actual_text_lines:
-                                    corrected_text = '\n'.join(actual_text_lines).strip()
-                            
-                            # 如果还有"修改说明"部分，则只取前面的内容
-                            if "修改说明" in corrected_text:
-                                corrected_text = corrected_text.split("修改说明")[0].strip()
-                            
-                            # 返回处理后的文本和单元格引用
-                            return {
-                                "cell_ref": cell_item["cell_ref"],
-                                "corrected_text": corrected_text
-                            }
                         
-                        # 并发处理所有单元格
-                        tasks = [process_cell_item(cell_item) for cell_item in cell_data]
-                        processed_cell_data = await asyncio.gather(*tasks)
-                        
-                        # 构造批量更新请求，将处理后的数据按原始位置写回电子表格
-                        value_ranges = []
-                        for item in processed_cell_data:
-                            value_ranges.append({
-                                "range": f"{sheet_id}!{item['cell_ref']}:{item['cell_ref']}",
-                                "values": [[item["corrected_text"]]]
-                            })
-                        
-                        self.logger.info(f"准备写回电子表格的数据: {value_ranges}")
-                        
-                        write_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values_batch_update"
-                        write_payload = {
-                            "valueRanges": value_ranges
+                        # 返回结果
+                        return {
+                            "status": "success",
+                            "document_id": spreadsheet_token,
+                            "request_id": request_id
                         }
+                    else:
+                        # 对所有单元格内容进行违禁词标记
+                        marked_cell_data = {}
+                        for cell_ref, content in cell_data.items():
+                            self.logger.info(f"[违禁词处理前] 单元格: {cell_ref}, 内容: {content}")
+                            marked_content = self._mark_prohibited_words(content)
+                            marked_cell_data[cell_ref] = marked_content
+                            self.logger.info(f"[违禁词处理后] 单元格: {cell_ref}, 内容: {marked_content}")
                         
-                        write_response = await client.post(write_url, headers=headers, json=write_payload)
-                        write_response.raise_for_status()
-                        write_result = write_response.json()
+                        # 构建表格格式的文本用于模型处理
+                        # 创建行列结构
+                        max_row = 0
+                        max_col = 0
+                        cell_positions = {}  # {cell_ref: (row, col)}
                         
-                        if write_result.get("code") != 0:
-                            raise Exception(f"Failed to write data to spreadsheet: {write_result}")
+                        # 解析单元格引用获取行列信息
+                        for cell_ref in marked_cell_data.keys():
+                            col_str = ''.join(filter(str.isalpha, cell_ref))
+                            row_str = ''.join(filter(str.isdigit, cell_ref))
+                            if col_str and row_str:
+                                col_num = self._cell_ref_to_index(col_str)
+                                row_num = int(row_str) - 1
+                                cell_positions[cell_ref] = (row_num, col_num)
+                                max_row = max(max_row, row_num)
+                                max_col = max(max_col, col_num)
+                        
+                        # 构建表格矩阵
+                        table_matrix = [["" for _ in range(max_col + 1)] for _ in range(max_row + 1)]
+                        for cell_ref, content in marked_cell_data.items():
+                            if cell_ref in cell_positions:
+                                row, col = cell_positions[cell_ref]
+                                table_matrix[row][col] = content  # 使用标记后的内容
+                        
+                        # 转换为制表符分隔的文本
+                        table_text = "\n".join(["\t".join(row) for row in table_matrix])
+                        
+                        # 构建提示词
+                        prompt = f"""
+你是一个专业的表格内容审核员。请审核以下电子表格内容，并按原格式返回优化后的内容。
+
+表格结构说明：
+- 每行用换行符分隔
+- 每列用制表符(\\t)分隔
+- 保持原有行列结构不变
+
+审核要求：
+1. 错别字纠正：找出并修正所有错别字和语法错误
+2. 语句优化：确保句子结构合理，表达清晰流畅
+3. 违禁词替换：将用{{}}标记的违禁词必须替换成合适的内容，替换后必须删除{{}}标记。这是强制要求，不能跳过。
+4. 逻辑优化：调整内容逻辑，确保符合认知顺序
+5. 口语化转换：将书面表达转换为自然口语表述
+6. 保持原意：所有修改不能改变原文的核心意思
+7. 格式保持：严格按照原有表格格式返回结果
+8. 如果单元格内容无需修改，请直接返回原始内容，不要添加任何说明
+
+重要说明：
+- 对于包含{{}}标记的内容，必须进行替换并移除括号，这是最重要的要求
+- 不要删除包含{{}}标记的单元格内容
+- 不要忽略任何{{}}标记
+
+原始表格内容：
+{table_text}
+
+优化后表格内容：
+"""
+                        
+                        # 调用大模型处理整个表格
+                        corrected_table_text = await self.llm.generate_text(prompt)
+                        
+                        # 解析处理后的表格文本
+                        corrected_lines = corrected_table_text.strip().split('\n')
+                        corrected_matrix = [line.split('\t') for line in corrected_lines]
+                        
+                        # 将处理后的数据按原位置写回
+                        for cell_ref, (row, col) in cell_positions.items():
+                            try:
+                                # 确保行列索引在处理后矩阵范围内
+                                if row < len(corrected_matrix) and col < len(corrected_matrix[row]):
+                                    corrected_content = corrected_matrix[row][col]
+                                    
+                                    # 清理处理后的文本，确保不包含提示词
+                                    cleaned_content = self._clean_model_response(corrected_content)
+                                    
+                                    # 记录即将写入电子表格的数据
+                                    self.logger.info(f"[写入电子表格前] 单元格: {cell_ref}, 内容: {cleaned_content}")
+                                    
+                                    # 写回单个单元格
+                                    write_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values"
+                                    write_payload = {
+                                        "valueRange": {
+                                            "range": f"{sheet_id}!{cell_ref}:{cell_ref}",
+                                            "values": [[cleaned_content]]
+                                        }
+                                    }
+                                    
+                                    write_response = await client.put(write_url, headers=headers, json=write_payload)
+                                    write_response.raise_for_status()
+                                    write_result = write_response.json()
+                                    
+                                    if write_result.get("code") != 0:
+                                        self.logger.error(f"写入单元格 {cell_ref} 失败: {write_result}")
+                                    else:
+                                        self.logger.info(f"[写入电子表格成功] 单元格: {cell_ref}")
+                                else:
+                                    # 如果处理后的矩阵不包含该位置，使用原始内容（标记后的）
+                                    original_marked_content = marked_cell_data[cell_ref]  # 使用标记后的内容
+                                    self.logger.info(f"[写入电子表格前] 单元格: {cell_ref}, 内容: {original_marked_content} (使用标记后的内容)")
+                                    
+                                    write_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values"
+                                    write_payload = {
+                                        "valueRange": {
+                                            "range": f"{sheet_id}!{cell_ref}:{cell_ref}",
+                                            "values": [[original_marked_content]]
+                                        }
+                                    }
+                                    
+                                    write_response = await client.put(write_url, headers=headers, json=write_payload)
+                                    write_response.raise_for_status()
+                                    write_result = write_response.json()
+                                    
+                                    if write_result.get("code") != 0:
+                                        self.logger.error(f"写入单元格 {cell_ref} 失败: {write_result}")
+                                    else:
+                                        self.logger.info(f"[写入电子表格成功] 单元格: {cell_ref}")
+                            except Exception as e:
+                                self.logger.error(f"写入单元格 {cell_ref} 时出错: {str(e)}")
                 
                 result = {
                     "status": "success",
@@ -523,79 +631,9 @@ class TextReviewerAgent(BaseAgent):
                 "request_id": request_id
             }
 
-    def _extract_text_from_document(self, doc_content: dict) -> str:
-        """
-        从飞书文档内容中提取文本
-        
-        Args:
-            doc_content: 飞书文档内容
-            
-        Returns:
-            提取的文本内容
-        """
-        # 飞书文档内容结构解析
-        # 根据飞书文档API，内容在blocks字段中
-        blocks = doc_content.get("items", [])  # 使用items而不是blocks
-        
-        if not blocks:
-            # 如果items为空，尝试直接从content中获取blocks
-            blocks = doc_content.get("blocks", [])
-            
-        if not blocks:
-            return ""
-        
-        text_parts = []
-        
-        # 遍历所有块，提取文本内容
-        for block in blocks:
-            # 根据飞书文档API结构，处理不同类型的块
-            block_type = block.get("block_type")
-            
-            # 处理页面块
-            if "page" in block:
-                elements = block["page"].get("elements", [])
-                for element in elements:
-                    if "text_run" in element:
-                        content = element["text_run"].get("content", "")
-                        if content:
-                            text_parts.append(content)
-            
-            # 处理文本块
-            elif "text" in block:
-                elements = block["text"].get("elements", [])
-                for element in elements:
-                    if "text_run" in element:
-                        content = element["text_run"].get("content", "")
-                        if content:
-                            text_parts.append(content)
-            
-            # 处理段落块
-            elif block_type == 2:  # paragraph
-                children = block.get("children", [])
-                for child in children:
-                    if "text_run" in child:
-                        content = child["text_run"].get("content", "")
-                        if content:
-                            text_parts.append(content)
-            
-            # 处理标题块
-            elif block_type in [1, 3, 4, 5, 6, 7, 8, 9]:  # heading blocks
-                if "heading" + str(block_type) in block:
-                    heading = block["heading" + str(block_type)]
-                    if "elements" in heading:
-                        elements = heading["elements"]
-                        for element in elements:
-                            if "text_run" in element:
-                                content = element["text_run"].get("content", "")
-                                if content:
-                                    text_parts.append(content)
-        
-        # 将所有文本部分连接起来
-        return "\n".join(text_parts)
-    
     def _index_to_cell_ref(self, col_index: int, row_index: int) -> str:
         """
-        将行列索引转换为单元格引用 (如 0->A1, 1->B1)
+        将行列索引转换为单元格引用 (如 0,0 -> A1)
         
         Args:
             col_index: 列索引 (从0开始)
@@ -610,8 +648,8 @@ class TextReviewerAgent(BaseAgent):
             col_letter = chr(ord('A') + col_index)
         else:
             # 处理超过Z的列 (AA, AB, ...)
-            first_letter = chr(ord('A') + (col_index - 26) // 26)
-            second_letter = chr(ord('A') + (col_index - 26) % 26)
+            first_letter = chr(ord('A') + col_index // 26 - 1)
+            second_letter = chr(ord('A') + col_index % 26)
             col_letter = first_letter + second_letter
         
         # 行号从1开始
@@ -619,6 +657,127 @@ class TextReviewerAgent(BaseAgent):
         
         return f"{col_letter}{row_number}"
     
+    def _cell_ref_to_index(self, col_str: str) -> int:
+        """
+        将列字母转换为索引 (如 A->0, B->1, ..., Z->25, AA->26, ...)
+        
+        Args:
+            col_str: 列字母 (如 A, B, AA)
+            
+        Returns:
+            列索引
+        """
+        result = 0
+        for char in col_str:
+            result = result * 26 + (ord(char) - ord('A') + 1)
+        return result - 1
+
+    def _clean_model_response(self, text: str) -> str:
+        """
+        清理模型响应，移除提示词相关内容
+        
+        Args:
+            text: 模型响应文本
+            
+        Returns:
+            清理后的文本
+        """
+        # 如果文本包含解释性内容，尝试提取原始文本
+        if "没有错别字" in text and "无需任何修改" in text and "处理后的文本仍为" in text:
+            # 提取引号中的内容
+            import re
+            quote_pattern = r'“([^”]+)”'
+            matches = re.findall(quote_pattern, text)
+            if matches:
+                return matches[-1]  # 返回最后一个引号中的内容
+        
+        # 定义需要过滤的提示词片段
+        filter_patterns = [
+            "你是一个专业的表格内容审核员。请审核以下电子表格内容，并按原格式返回优化后的内容。",
+            "表格结构说明：",
+            "每行用换行符分隔",
+            "每列用制表符(\\t)分隔",
+            "保持原有行列结构不变",
+            "审核要求：",
+            "1. 错别字纠正：找出并修正所有错别字和语法错误",
+            "2. 语句优化：确保句子结构合理，表达清晰流畅",
+            "3. 违禁词替换：将用{}标记的违禁词必须替换成合适的内容，替换后必须删除{}标记。这是强制要求，不能跳过。",
+            "4. 逻辑优化：调整内容逻辑，确保符合认知顺序",
+            "5. 口语化转换：将书面表达转换为自然口语表述",
+            "6. 保持原意：所有修改不能改变原文的核心意思",
+            "7. 格式保持：严格按照原有表格格式返回结果",
+            "8. 如果单元格内容无需修改，请直接返回原始内容，不要添加任何说明",
+            "重要说明：",
+            "对于包含{}标记的内容，必须进行替换并移除括号，这是最重要的要求",
+            "不要删除包含{}标记的单元格内容",
+            "不要忽略任何{}标记",
+            "原始表格内容：",
+            "优化后表格内容：",
+            "请作为专业内容审核员，对以下文本进行全面审查和优化：",
+            "审核文本：",
+            "一、核心审核要求",
+            "错别字纠正：精准识别并修正所有拼写错误、错别字和语法错误",
+            "语句通顺：确保句子结构合理，表达清晰流畅，语义相近的句子删除。",
+            "违禁词处理：替换所有用{}标记的违禁词（只能替换不能删除），替换后删除{}标记。",
+            "逻辑优化：调整内容逻辑顺序，确保产品卖点介绍符合使用流程（如洗烘套装先洗衣机后烘干机）和认知逻辑（如康师傅喝开水先工艺后口感）",
+            "口语化转换：将书面化表达转换为自然口语表述（如",
+            "原意保持：所有修改不得改变原文核心含义和意图",
+            "二、输出格式要求",
+            "直接返回修改后的完整文本",
+            "不添加任何额外说明或解释！！！！",
+            "使用zh语言输出",
+            "确保文本格式与原文一致",
+            "三、审核标准参考",
+            "采用千万级专业词库和数十亿训练语料的检测标准",
+            "符合内容安全与合规性要求",
+            "保持语言自然流畅且适合口语传播",
+            "请现在开始审核并返回修改后的文本",
+            "请现在开始审核并返回修改后的文本。如果文本已经完美无需修改，请直接返回原始文本内容，不要添加任何说明。",
+            "请你提供具体需要审核的文本内容，以便我按照要求进行审核和优化 。",
+            "错别字纠正：精确找出并改正所有拼写错误、错别字以及语法错误",
+            "语句通顺：保证句子结构恰当，表达清晰、通顺，把语义相近的句子删掉。",
+            "违禁词处理：替换所有用{}标注的违禁词（只能替换不能删除），替换后去掉{}标注。",
+            "逻辑优化：调整内容的逻辑顺序，要让产品卖点介绍符合使用流程（像洗烘套装先介绍洗衣机再介绍烘干机）以及认知逻辑（比如康师傅喝开水先讲工艺再讲口感）",
+            "口语化转换：把书面化表述转变成自然的口语说法（例如",
+            "原意保持：所有修改都不能改变原文的核心意思和意图",
+            "审核标准参考",
+            "内容安全与合规性要求",
+            "自然流畅且适合口语传播",
+            "你是一个专业的文本优化助手，请对以下文本进行审核和优化。",
+            "请严格按照以下要求进行处理：",
+            "1. 如果文本存在错别字、语法错误或违禁词，请进行修正",
+            "2. 如果文本已经完美，无需任何修改，请直接返回原始文本内容，不要添加任何说明",
+            "3. 不要添加任何解释、说明或其他额外内容",
+            "4. 直接返回处理后的文本内容",
+            "处理后文本：",
+            "你提供的文本",
+            "没有错别字、语法错误、违禁词等需要处理的问题",
+            "句子结构简单清晰",
+            "逻辑上也无需调整",
+            "口语化和原意方面也无需变动",
+            "所以处理后的文本仍为"
+        ]
+        
+        # 过滤掉所有提示词片段
+        cleaned_text = text
+        for pattern in filter_patterns:
+            cleaned_text = cleaned_text.replace(pattern, "")
+        
+        # 移除可能的修改说明部分
+        if "修改说明" in cleaned_text:
+            cleaned_text = cleaned_text.split("修改说明")[0].strip()
+        
+        # 清理多余的空白行和空格
+        lines = cleaned_text.split('\n')
+        cleaned_lines = [line.strip() for line in lines if line.strip()]
+        cleaned_text = '\n'.join(cleaned_lines).strip()
+        
+        # 如果处理后的文本为空，则返回原文本
+        if not cleaned_text:
+            return text
+        
+        return cleaned_text
+
     async def process_feishu_message(self, request: FeishuMessageRequest) -> dict:
         """
         处理飞书消息
