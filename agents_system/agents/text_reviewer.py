@@ -208,18 +208,14 @@ class TextReviewerAgent(BaseAgent):
             标记后的文本
         """
         if not text or not self.ac_automaton:
-            if not self.ac_automaton:
-                self.logger.warning("AC自动机未初始化，无法检测违禁词")
             return text
-            
+        
         # 查找所有匹配的违禁词
         matches = self.ac_automaton.search(text)
         
         # 输出违禁词匹配日志
         if matches:
             self.logger.info(f"发现违禁词: {matches}")
-            for word, start, end in matches:
-                self.logger.info(f"匹配到违禁词: {word} 位置: [{start}:{end}] 上下文: {text[max(0, start-10):start]}[{word}]{text[end:end+10]}")
         else:
             self.logger.info("未发现违禁词")
         
@@ -232,13 +228,60 @@ class TextReviewerAgent(BaseAgent):
         # 标记违禁词
         marked_text = text
         for word, start, end in matches:
-            marked_text = marked_text[:start] + f"{{{word}}}" + marked_text[end:]
-            self.logger.info(f"替换违禁词: {word} 位置: {start} 新文本片段: ...{marked_text[max(0, start-20):start+25]}...")
+            # 检查是否为误匹配，例如单个数字或过于常见的词汇
+            if self._is_false_positive(word, text, start, end):
+                self.logger.info(f"跳过误匹配的违禁词: {word} 位置: [{start}:{end}] 上下文: [{text[max(0, start-10):end+10]}]")
+                continue
+            
+            # 记录匹配到的违禁词及上下文
+            context_start = max(0, start - 10)
+            context_end = min(len(text), end + 10)
+            context = text[context_start:context_end]
+            self.logger.info(f"匹配到违禁词: {word} 位置: [{start}:{end}] 上下文: [{context}]")
+            
+            # 执行替换
+            original_fragment = marked_text[start:end]
+            new_fragment = f"{{{word}}}"
+            marked_text = marked_text[:start] + new_fragment + marked_text[end:]
+            
+            self.logger.info(f"替换违禁词: {word} 位置: {start} 新文本片段: ...{marked_text[max(0, start-20):start+len(new_fragment)+20]}...")
         
-        self.logger.info(f"原始文本: {text[:100]}{'...' if len(text) > 100 else ''}")
-        self.logger.info(f"标记后文本: {marked_text[:100]}{'...' if len(marked_text) > 100 else ''}")
+        self.logger.info(f"原始文本: {text}")
+        self.logger.info(f"标记后文本: {marked_text}")
         
         return marked_text
+    
+    def _is_false_positive(self, word: str, text: str, start: int, end: int) -> bool:
+        """
+        判断是否为误匹配的违禁词
+        
+        Args:
+            word: 匹配到的词
+            text: 原始文本
+            start: 匹配开始位置
+            end: 匹配结束位置
+            
+        Returns:
+            是否为误匹配
+        """
+        # 单个数字通常不是违禁词
+        if word.isdigit() and len(word) == 1:
+            return True
+        
+        # 单个字符通常不是违禁词（除非是特殊字符）
+        if len(word) == 1 and word.isalpha():
+            # 检查前后字符是否也是字母或数字，如果是，则可能是误匹配
+            if (start > 0 and text[start-1].isalnum()) or (end < len(text) and text[end].isalnum()):
+                return True
+        
+        # 常见词汇但可能被误判为违禁词的词
+        common_words = {"第一", "最后", "最新", "最好", "最高", "最多", "最少", "最低", "最新"}
+        if word in common_words:
+            # 检查是否在特定语境下（如数字前）才可能是违禁词
+            if start > 0 and text[start-1].isdigit():
+                return True
+        
+        return False
     
     async def process_feishu_document(self, request: FeishuDocumentRequest) -> dict:
         """
@@ -533,7 +576,7 @@ class TextReviewerAgent(BaseAgent):
 
 审核要求：
 1. 错别字纠正：找出并修正所有错别字和语法错误
-2. 语句优化：确保句子结构合理，表达清晰流畅
+2. 语句优化：确保句子结构合理，表达清晰流畅，对于句子中明显的逻辑错误要进行替代。
 3. 违禁词替换：将用{{}}标记的违禁词必须替换成合适的内容，替换后必须删除{{}}标记。这是强制要求，不能跳过。
 4. 逻辑优化：调整内容逻辑，确保符合认知顺序
 5. 口语化转换：将书面表达转换为自然口语表述
@@ -551,26 +594,47 @@ class TextReviewerAgent(BaseAgent):
 
 优化后表格内容：
 """
-                        
+                        self.logger.info(f"调用大模型处理整个表格{table_text}")
                         # 调用大模型处理整个表格
                         corrected_table_text = await self.llm.generate_text(prompt)
-                        
+                        self.logger.info(f"调用大模型处理整个表格后{corrected_table_text}")
                         # 解析处理后的表格文本
                         corrected_lines = corrected_table_text.strip().split('\n')
                         corrected_matrix = [line.split('\t') for line in corrected_lines]
                         
+                        self.logger.info(f"模型返回的处理后表格行数: {len(corrected_matrix)}")
+                        for i, row in enumerate(corrected_matrix):
+                            self.logger.info(f"第{i+1}行单元格数: {len(row)}")
+                            for j, cell in enumerate(row):
+                                self.logger.info(f"  第{i+1}行第{j+1}列: '{cell}'")
+                        
                         # 将处理后的数据按原位置写回
+                        write_errors = []  # 记录写入错误
                         for cell_ref, (row, col) in cell_positions.items():
                             try:
+                                self.logger.info(f"准备写回单元格 {cell_ref} (row={row}, col={col})")
+                                
                                 # 确保行列索引在处理后矩阵范围内
                                 if row < len(corrected_matrix) and col < len(corrected_matrix[row]):
                                     corrected_content = corrected_matrix[row][col]
+                                    self.logger.info(f"从模型结果中获取内容: '{corrected_content}'")
+                                    
+                                    # 检查内容是否为空
+                                    if not corrected_content.strip():
+                                        self.logger.warning(f"模型返回空内容，使用标记后的内容: '{marked_cell_data.get(cell_ref, cell_data.get(cell_ref, ''))}'")
+                                        corrected_content = marked_cell_data.get(cell_ref, cell_data.get(cell_ref, ""))
                                     
                                     # 清理处理后的文本，确保不包含提示词
                                     cleaned_content = self._clean_model_response(corrected_content)
+                                    self.logger.info(f"清理后的内容: '{cleaned_content}'")
+                                    
+                                    # 再次检查清理后的内容是否为空
+                                    if not cleaned_content.strip():
+                                        self.logger.warning(f"清理后内容为空，使用标记后的内容: '{marked_cell_data.get(cell_ref, cell_data.get(cell_ref, ''))}'")
+                                        cleaned_content = marked_cell_data.get(cell_ref, cell_data.get(cell_ref, ""))
                                     
                                     # 记录即将写入电子表格的数据
-                                    self.logger.info(f"[写入电子表格前] 单元格: {cell_ref}, 内容: {cleaned_content}")
+                                    self.logger.info(f"[写入电子表格前] 单元格: {cell_ref}, 内容: '{cleaned_content}'")
                                     
                                     # 写回单个单元格
                                     write_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values"
@@ -586,13 +650,15 @@ class TextReviewerAgent(BaseAgent):
                                     write_result = write_response.json()
                                     
                                     if write_result.get("code") != 0:
-                                        self.logger.error(f"写入单元格 {cell_ref} 失败: {write_result}")
+                                        error_msg = f"写入单元格 {cell_ref} 失败: {write_result}"
+                                        self.logger.error(error_msg)
+                                        write_errors.append(error_msg)
                                     else:
                                         self.logger.info(f"[写入电子表格成功] 单元格: {cell_ref}")
                                 else:
                                     # 如果处理后的矩阵不包含该位置，使用原始内容（标记后的）
-                                    original_marked_content = marked_cell_data[cell_ref]  # 使用标记后的内容
-                                    self.logger.info(f"[写入电子表格前] 单元格: {cell_ref}, 内容: {original_marked_content} (使用标记后的内容)")
+                                    original_marked_content = marked_cell_data.get(cell_ref, cell_data.get(cell_ref, ""))
+                                    self.logger.info(f"[写入电子表格前] 单元格: {cell_ref}, 内容: '{original_marked_content}' (使用标记后的内容)")
                                     
                                     write_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values"
                                     write_payload = {
@@ -607,11 +673,51 @@ class TextReviewerAgent(BaseAgent):
                                     write_result = write_response.json()
                                     
                                     if write_result.get("code") != 0:
-                                        self.logger.error(f"写入单元格 {cell_ref} 失败: {write_result}")
+                                        error_msg = f"写入单元格 {cell_ref} 失败: {write_result}"
+                                        self.logger.error(error_msg)
+                                        write_errors.append(error_msg)
                                     else:
                                         self.logger.info(f"[写入电子表格成功] 单元格: {cell_ref}")
                             except Exception as e:
-                                self.logger.error(f"写入单元格 {cell_ref} 时出错: {str(e)}")
+                                error_msg = f"写入单元格 {cell_ref} 时出错: {str(e)}"
+                                self.logger.error(error_msg)
+                                write_errors.append(error_msg)
+                                
+                                # 出错时尝试写回原始内容（标记后的）
+                                try:
+                                    original_marked_content = marked_cell_data.get(cell_ref, cell_data.get(cell_ref, ""))
+                                    self.logger.info(f"[出错回退] 单元格: {cell_ref}, 内容: '{original_marked_content}'")
+                                    
+                                    write_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values"
+                                    write_payload = {
+                                        "valueRange": {
+                                            "range": f"{sheet_id}!{cell_ref}:{cell_ref}",
+                                            "values": [[original_marked_content]]
+                                        }
+                                    }
+                                    
+                                    write_response = await client.put(write_url, headers=headers, json=write_payload)
+                                    write_response.raise_for_status()
+                                    write_result = write_response.json()
+                                    
+                                    if write_result.get("code") != 0:
+                                        fallback_error_msg = f"[出错回退] 写入单元格 {cell_ref} 失败: {write_result}"
+                                        self.logger.error(fallback_error_msg)
+                                        write_errors.append(fallback_error_msg)
+                                    else:
+                                        self.logger.info(f"[出错回退] 写入电子表格成功: {cell_ref}")
+                                except Exception as fallback_e:
+                                    fallback_error_msg = f"[出错回退] 写入单元格 {cell_ref} 时再次出错: {str(fallback_e)}"
+                                    self.logger.error(fallback_error_msg)
+                                    write_errors.append(fallback_error_msg)
+                        
+                        # 汇总写入结果
+                        if write_errors:
+                            self.logger.warning(f"处理飞书电子表格时出现 {len(write_errors)} 个写入错误")
+                            for error in write_errors:
+                                self.logger.warning(f"写入错误: {error}")
+                        else:
+                            self.logger.info("所有单元格写入成功")
                 
                 result = {
                     "status": "success",
