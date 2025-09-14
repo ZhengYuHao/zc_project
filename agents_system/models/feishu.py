@@ -117,6 +117,26 @@ class FeishuClient:
             logger.info(f"Reading document {document_id} from Feishu")
             # 先获取文档元数据
             meta_response = await self.client.get(url, headers=headers)
+            
+            # 检查响应状态
+            if meta_response.status_code == 404:
+                # 尝试作为电子表格获取元信息
+                sheet_meta_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{document_id}/metainfo"
+                sheet_meta_response = await self.client.get(sheet_meta_url, headers=headers)
+                if sheet_meta_response.status_code == 200:
+                    sheet_meta_result = sheet_meta_response.json()
+                    if sheet_meta_result.get("code") == 0:
+                        # 这是一个电子表格
+                        result = {
+                            "meta": {"type": "sheet"},
+                            "content": {},
+                            "revision": 0,
+                            "document_id": document_id
+                        }
+                        return result
+                # 如果电子表格获取也失败，则抛出原始错误
+                meta_response.raise_for_status()
+            
             meta_response.raise_for_status()
             meta_result = meta_response.json()
             

@@ -173,18 +173,17 @@ class TextReviewerAgent(BaseAgent):
         if not matches:
             return text
 
-        # 标记违禁词（按起始位置升序排列，从前往后处理，避免位置偏移）
-        marked_text = list(text)
-        offset = 0
-        
-        # 按照起始位置升序排列，从前往后处理
-        for word, start, end in sorted(matches, key=lambda x: x[1]):
-            # 插入标记
-            marked_text.insert(end + offset, '}')
-            marked_text.insert(start + offset, '{')
-            offset += 2
-        
-        return ''.join(marked_text)
+        # Sort matches by start index descending to avoid offset issues
+        matches.sort(key=lambda x: x[1], reverse=True)
+
+        # Use a list for efficient insertions
+        result = list(text)
+
+        for word, start, end in matches:
+            # Replace the word with the wrapped version
+            result[start:end] = ['{'] + list(word) + ['}']
+
+        return ''.join(result)
     
     async def process_feishu_document(self, request: FeishuDocumentRequest) -> dict:
         """
@@ -216,6 +215,15 @@ class TextReviewerAgent(BaseAgent):
                 doc_content = doc_data.get("content", {})
                 
                 self.logger.info(f"Document {document_id} revision: {doc_revision}")
+                
+                # 检查是否为电子表格
+                doc_meta = doc_data.get("meta", {})
+                doc_type = doc_meta.get("type", "")
+                
+                if doc_type == "sheet":
+                    # 处理电子表格
+                    self.logger.info(f"Processing Feishu spreadsheet: {document_id}")
+                    return await self._process_feishu_spreadsheet(document_id, request_id)
                 
                 # 从文档内容中提取文本
                 original_text = self._extract_text_from_document(doc_content)
@@ -287,6 +295,125 @@ class TextReviewerAgent(BaseAgent):
                     "request_id": request_id
                 }
     
+    async def _process_feishu_spreadsheet(self, spreadsheet_token: str, request_id: str) -> dict:
+        """
+        处理飞书电子表格
+        
+        Args:
+            spreadsheet_token: 电子表格token
+            request_id: 请求ID
+            
+        Returns:
+            处理结果
+        """
+        try:
+            # 获取飞书访问令牌
+            tenant_token = await self.feishu_client.get_tenant_access_token()
+            
+            # 获取电子表格元数据，确定工作表
+            import httpx
+            meta_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/metainfo"
+            headers = {
+                "Authorization": f"Bearer {tenant_token}",
+                "Content-Type": "application/json; charset=utf-8"
+            }
+            
+            async with httpx.AsyncClient() as client:
+                # 获取电子表格元数据
+                meta_response = await client.get(meta_url, headers=headers)
+                meta_response.raise_for_status()
+                meta_result = meta_response.json()
+                
+                if meta_result.get("code") != 0:
+                    raise Exception(f"Failed to get spreadsheet metadata: {meta_result}")
+                
+                # 获取第一个工作表的sheet_id (根据实际响应结构调整)
+                if "data" in meta_result and "sheets" in meta_result["data"] and len(meta_result["data"]["sheets"]) > 0:
+                    first_sheet = meta_result["data"]["sheets"][0]
+                    # 检查是否存在sheet_id字段，如果不存在则使用其他可能的字段
+                    sheet_id = first_sheet.get("sheetId", first_sheet.get("sheet_id", first_sheet.get("index", "0")))
+                else:
+                    raise Exception(f"Unexpected metainfo API response structure: {meta_result}")
+                
+                self.logger.info(f"Using sheet_id: {sheet_id}")
+                
+                # 读取电子表格内容
+                read_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values_batch_get"
+                read_params = {
+                    "ranges": [f"{sheet_id}!A1:Z1000"]  # 读取较大范围的数据
+                }
+                
+                read_response = await client.get(read_url, headers=headers, params=read_params)
+                read_response.raise_for_status()
+                read_result = read_response.json()
+                
+                if read_result.get("code") != 0:
+                    raise Exception(f"Failed to read spreadsheet data: {read_result}")
+                
+                # 提取文本内容
+                value_ranges = read_result.get("data", {}).get("valueRanges", [])
+                if not value_ranges:
+                    original_text = "示例文本内容"
+                    self.logger.warning(f"No data found in spreadsheet {spreadsheet_token}, using sample text")
+                else:
+                    # 从二维数组中提取所有文本
+                    values = value_ranges[0].get("values", [])
+                    text_parts = []
+                    for row in values:
+                        for cell in row:
+                            if cell and isinstance(cell, str):
+                                text_parts.append(cell)
+                    
+                    original_text = "\n".join(text_parts)
+                    if not original_text:
+                        original_text = "示例文本内容"
+                        self.logger.warning(f"No text extracted from spreadsheet {spreadsheet_token}, using sample text")
+                
+                # 创建审稿请求
+                review_request = TextReviewRequest(
+                    text=original_text,
+                    language="zh"
+                )
+                
+                # 处理文本
+                review_result = await self.review_text(review_request)
+                
+                # 将处理结果写回电子表格的第一个单元格
+                write_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values"
+                write_payload = {
+                    "valueRange": {
+                        "range": f"{sheet_id}!A1:A1",  # 使用正确的范围格式
+                        "values": [[review_result.corrected_text]]
+                    }
+                }
+                
+                write_response = await client.put(write_url, headers=headers, json=write_payload)
+                write_response.raise_for_status()
+                write_result = write_response.json()
+                
+                if write_result.get("code") != 0:
+                    raise Exception(f"Failed to write data to spreadsheet: {write_result}")
+                
+                result = {
+                    "status": "success",
+                    "document_id": spreadsheet_token,
+                    "original_text": original_text,
+                    "corrected_text": review_result.corrected_text,
+                    "request_id": request_id
+                }
+                
+                self.logger.info(f"Successfully processed Feishu spreadsheet: {spreadsheet_token}")
+                return result
+                
+        except Exception as e:
+            self.logger.error(f"Error processing Feishu spreadsheet {spreadsheet_token}: {str(e)}")
+            return {
+                "status": "error",
+                "document_id": spreadsheet_token,
+                "error": str(e),
+                "request_id": request_id
+            }
+
     def _extract_text_from_document(self, doc_content: dict) -> str:
         """
         从飞书文档内容中提取文本
