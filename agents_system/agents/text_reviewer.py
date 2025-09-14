@@ -127,7 +127,7 @@ class TextReviewerAgent(BaseAgent):
     ​原意保持​：所有修改不得改变原文核心含义和意图
     二、输出格式要求
     直接返回修改后的完整文本
-    在完整的修改后的文本之后，添加一段详细的修改说明，每一处的违禁词替代或者修改都必须做说明,对语句的优化和删出也得详细说明。
+    不添加任何额外说明或解释！！！！
     使用{request.language}语言输出
     确保文本格式与原文一致
     三、审核标准参考
@@ -136,7 +136,7 @@ class TextReviewerAgent(BaseAgent):
     保持语言自然流畅且适合口语传播
     ​请现在开始审核并返回修改后的文本
         """
-        #不添加任何额外说明或解释
+        #在完整的修改后的文本之后，添加一段详细的修改说明，每一处的违禁词替代或者修改都必须做说明,对语句的优化和删出也得详细说明。
         if request.style:
             prompt += f"\n5. 文本风格要求：{request.style}"
         
@@ -350,55 +350,164 @@ class TextReviewerAgent(BaseAgent):
                 if read_result.get("code") != 0:
                     raise Exception(f"Failed to read spreadsheet data: {read_result}")
                 
-                # 提取文本内容
+                # 提取文本内容及其单元格位置
                 value_ranges = read_result.get("data", {}).get("valueRanges", [])
                 if not value_ranges:
                     original_text = "示例文本内容"
                     self.logger.warning(f"No data found in spreadsheet {spreadsheet_token}, using sample text")
-                else:
-                    # 从二维数组中提取所有文本
-                    values = value_ranges[0].get("values", [])
-                    text_parts = []
-                    for row in values:
-                        for cell in row:
-                            if cell and isinstance(cell, str):
-                                text_parts.append(cell)
+                    # 创建审稿请求
+                    review_request = TextReviewRequest(
+                        text=original_text,
+                        language="zh"
+                    )
                     
-                    original_text = "\n".join(text_parts)
-                    if not original_text:
+                    # 处理文本
+                    review_result = await self.review_text(review_request)
+                    
+                    # 将处理结果写回电子表格的第一个单元格
+                    write_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values"
+                    write_payload = {
+                        "valueRange": {
+                            "range": f"{sheet_id}!A1:A1",  # 使用正确的范围格式
+                            "values": [[review_result.corrected_text]]
+                        }
+                    }
+                    
+                    write_response = await client.put(write_url, headers=headers, json=write_payload)
+                    write_response.raise_for_status()
+                    write_result = write_response.json()
+                    
+                    if write_result.get("code") != 0:
+                        raise Exception(f"Failed to write data to spreadsheet: {write_result}")
+                else:
+                    # 从二维数组中提取所有文本及其位置
+                    cell_data = []  # 存储单元格数据 [{ "cell_ref": "A1", "content": "内容" }, ...]
+                    values = value_ranges[0].get("values", [])
+                    for row_index, row in enumerate(values):
+                        for col_index, cell in enumerate(row):
+                            if cell and isinstance(cell, str):
+                                # 将行列索引转换为单元格引用 (如 0,0 -> A1)
+                                cell_ref = self._index_to_cell_ref(col_index, row_index)
+                                cell_data.append({
+                                    "cell_ref": cell_ref,
+                                    "content": cell
+                                })
+                    
+                    if not cell_data:
                         original_text = "示例文本内容"
                         self.logger.warning(f"No text extracted from spreadsheet {spreadsheet_token}, using sample text")
-                
-                # 创建审稿请求
-                review_request = TextReviewRequest(
-                    text=original_text,
-                    language="zh"
-                )
-                
-                # 处理文本
-                review_result = await self.review_text(review_request)
-                
-                # 将处理结果写回电子表格的第一个单元格
-                write_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values"
-                write_payload = {
-                    "valueRange": {
-                        "range": f"{sheet_id}!A1:A1",  # 使用正确的范围格式
-                        "values": [[review_result.corrected_text]]
-                    }
-                }
-                
-                write_response = await client.put(write_url, headers=headers, json=write_payload)
-                write_response.raise_for_status()
-                write_result = write_response.json()
-                
-                if write_result.get("code") != 0:
-                    raise Exception(f"Failed to write data to spreadsheet: {write_result}")
+                        # 创建审稿请求
+                        review_request = TextReviewRequest(
+                            text=original_text,
+                            language="zh"
+                        )
+                        
+                        # 处理文本
+                        review_result = await self.review_text(review_request)
+                        
+                        # 将处理结果写回电子表格的第一个单元格
+                        write_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values"
+                        write_payload = {
+                            "valueRange": {
+                                "range": f"{sheet_id}!A1:A1",  # 使用正确的范围格式
+                                "values": [[review_result.corrected_text]]
+                            }
+                        }
+                        
+                        write_response = await client.put(write_url, headers=headers, json=write_payload)
+                        write_response.raise_for_status()
+                        write_result = write_response.json()
+                        
+                        if write_result.get("code") != 0:
+                            raise Exception(f"Failed to write data to spreadsheet: {write_result}")
+                    else:
+                        # 并发处理所有单元格的文本
+                        async def process_cell_item(cell_item):
+                            """处理单个单元格的文本"""
+                            # 创建审稿请求
+                            review_request = TextReviewRequest(
+                                text=cell_item["content"],
+                                language="zh"
+                            )
+                            
+                            # 处理文本
+                            review_result = await self.review_text(review_request)
+                            
+                            # 提取修改后的文本内容，去除可能包含的提示词或其他说明
+                            corrected_text = review_result.corrected_text
+                            
+                            # 如果响应包含特定的提示词相关标识，则只取第一部分
+                            # 检查是否包含提示词中的关键词
+                            if any(keyword in corrected_text for keyword in [
+                                "请作为专业内容审核员", 
+                                "核心审核要求", 
+                                "违禁词处理", 
+                                "请现在开始审核"
+                            ]):
+                                # 尝试提取实际的文本内容，排除提示词部分
+                                lines = corrected_text.split('\n')
+                                actual_text_lines = []
+                                start_collecting = False
+                                
+                                for line in lines:
+                                    # 当遇到明显不属于正文的内容时停止收集
+                                    if any(keyword in line for keyword in [
+                                        "核心审核要求", 
+                                        "输出格式要求", 
+                                        "审核标准参考"
+                                    ]):
+                                        break
+                                    
+                                    # 开始收集正文内容
+                                    if not start_collecting and line.strip() and not line.startswith((' ', '​', '\t')):
+                                        start_collecting = True
+                                    
+                                    if start_collecting:
+                                        actual_text_lines.append(line)
+                                
+                                # 如果成功提取到内容，则使用提取的内容
+                                if actual_text_lines:
+                                    corrected_text = '\n'.join(actual_text_lines).strip()
+                            
+                            # 如果还有"修改说明"部分，则只取前面的内容
+                            if "修改说明" in corrected_text:
+                                corrected_text = corrected_text.split("修改说明")[0].strip()
+                            
+                            # 返回处理后的文本和单元格引用
+                            return {
+                                "cell_ref": cell_item["cell_ref"],
+                                "corrected_text": corrected_text
+                            }
+                        
+                        # 并发处理所有单元格
+                        tasks = [process_cell_item(cell_item) for cell_item in cell_data]
+                        processed_cell_data = await asyncio.gather(*tasks)
+                        
+                        # 构造批量更新请求，将处理后的数据按原始位置写回电子表格
+                        value_ranges = []
+                        for item in processed_cell_data:
+                            value_ranges.append({
+                                "range": f"{sheet_id}!{item['cell_ref']}:{item['cell_ref']}",
+                                "values": [[item["corrected_text"]]]
+                            })
+                        
+                        self.logger.info(f"准备写回电子表格的数据: {value_ranges}")
+                        
+                        write_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values_batch_update"
+                        write_payload = {
+                            "valueRanges": value_ranges
+                        }
+                        
+                        write_response = await client.post(write_url, headers=headers, json=write_payload)
+                        write_response.raise_for_status()
+                        write_result = write_response.json()
+                        
+                        if write_result.get("code") != 0:
+                            raise Exception(f"Failed to write data to spreadsheet: {write_result}")
                 
                 result = {
                     "status": "success",
                     "document_id": spreadsheet_token,
-                    "original_text": original_text,
-                    "corrected_text": review_result.corrected_text,
                     "request_id": request_id
                 }
                 
@@ -483,6 +592,32 @@ class TextReviewerAgent(BaseAgent):
         
         # 将所有文本部分连接起来
         return "\n".join(text_parts)
+    
+    def _index_to_cell_ref(self, col_index: int, row_index: int) -> str:
+        """
+        将行列索引转换为单元格引用 (如 0->A1, 1->B1)
+        
+        Args:
+            col_index: 列索引 (从0开始)
+            row_index: 行索引 (从0开始)
+            
+        Returns:
+            单元格引用 (如 A1, B2)
+        """
+        # 将列索引转换为字母 (0->A, 1->B, ..., 25->Z, 26->AA, ...)
+        col_letter = ""
+        if col_index < 26:
+            col_letter = chr(ord('A') + col_index)
+        else:
+            # 处理超过Z的列 (AA, AB, ...)
+            first_letter = chr(ord('A') + (col_index - 26) // 26)
+            second_letter = chr(ord('A') + (col_index - 26) % 26)
+            col_letter = first_letter + second_letter
+        
+        # 行号从1开始
+        row_number = row_index + 1
+        
+        return f"{col_letter}{row_number}"
     
     async def process_feishu_message(self, request: FeishuMessageRequest) -> dict:
         """
