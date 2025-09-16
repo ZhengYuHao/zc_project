@@ -109,10 +109,14 @@ class TextReviewerAgent(BaseAgent):
         request_id = get_request_id()
         
         # 使用AC自动机检测并标记违禁词
-        self.logger.info(f"[违禁词处理前] 文本: {request.text}")
-        marked_text = self._mark_prohibited_words(request.text)
-        self.logger.info(f"[违禁词处理后] 文本: {marked_text}")
+        # self.logger.info(f"[违禁词处理前] 文本: {request.text}")
+        # marked_text = self._mark_prohibited_words(request.text)
+        # self.logger.info(f"[违禁词处理后] 文本: {marked_text}")
         # 构建提示词
+    # ​违禁词处理​：替换所有用{{}}标记的违禁词（只能替换不能删除），替换后删除{{}}标记。
+    # ​口语化转换​：将书面化表达转换为自然口语表述（如"承托"改为"支撑"等），特别适合口播场景
+    # ​原意保持​：所有修改不得改变原文核心含义和意图
+        marked_text = request.text
         prompt = f"""
         请作为专业内容审核员，对以下文本进行全面审查和优化：
 
@@ -122,9 +126,9 @@ class TextReviewerAgent(BaseAgent):
     一、核心审核要求
     ​错别字纠正​：精准识别并修正所有拼写错误、错别字和语法错误
     语句通顺​：确保句子结构合理，表达清晰流畅，语义相近的句子删除。
-    ​违禁词处理​：替换所有用{{}}标记的违禁词（只能替换不能删除），替换后删除{{}}标记。
+    
     ​逻辑优化​：调整内容逻辑顺序，确保产品卖点介绍符合使用流程（如洗烘套装先洗衣机后烘干机）和认知逻辑（如康师傅喝开水先工艺后口感）
-    ​口语化转换​：将书面化表达转换为自然口语表述（如"承托"改为"支撑"等），特别适合口播场景
+    
     ​原意保持​：所有修改不得改变原文核心含义和意图
     二、输出格式要求
     直接返回修改后的完整文本
@@ -533,10 +537,11 @@ class TextReviewerAgent(BaseAgent):
                         # 对所有单元格内容进行违禁词标记
                         marked_cell_data = {}
                         for cell_ref, content in cell_data.items():
-                            self.logger.info(f"[违禁词处理前] 单元格: {cell_ref}, 内容: {content}")
-                            marked_content = self._mark_prohibited_words(content)
+                            # self.logger.info(f"[违禁词处理前] 单元格: {cell_ref}, 内容: {content}")
+                            # marked_content = self._mark_prohibited_words(content)
+                            marked_content = content
                             marked_cell_data[cell_ref] = marked_content
-                            self.logger.info(f"[违禁词处理后] 单元格: {cell_ref}, 内容: {marked_content}")
+                            # self.logger.info(f"[违禁词处理后] 单元格: {cell_ref}, 内容: {marked_content}")
                         
                         # 构建表格格式的文本用于模型处理
                         # 创建行列结构
@@ -566,6 +571,12 @@ class TextReviewerAgent(BaseAgent):
                         table_text = "\n".join(["\t".join(row) for row in table_matrix])
                         
                         # 构建提示词
+                        # 3. 违禁词替换：将用{{}}标记的违禁词必须替换成合适的内容，替换后必须删除{{}}标记。这是强制要求，不能跳过。
+                        # 5. 口语化转换：将书面表达转换为自然口语表述
+                        # 重要说明：
+                        # - 对于包含{{}}标记的内容，必须进行替换并移除括号，这是最重要的要求
+                        # - 不要删除包含{{}}标记的单元格内容
+                        # - 不要忽略任何{{}}标记
                         prompt = f"""
 你是一个专业的表格内容审核员。请审核以下电子表格内容，并按原格式返回优化后的内容。
 
@@ -577,17 +588,14 @@ class TextReviewerAgent(BaseAgent):
 审核要求：
 1. 错别字纠正：找出并修正所有错别字和语法错误
 2. 语句优化：确保句子结构合理，表达清晰流畅，对于句子中明显的逻辑错误要进行替代。
-3. 违禁词替换：将用{{}}标记的违禁词必须替换成合适的内容，替换后必须删除{{}}标记。这是强制要求，不能跳过。
+
 4. 逻辑优化：调整内容逻辑，确保符合认知顺序
-5. 口语化转换：将书面表达转换为自然口语表述
+
 6. 保持原意：所有修改不能改变原文的核心意思
 7. 格式保持：严格按照原有表格格式返回结果
 8. 如果单元格内容无需修改，请直接返回原始内容，不要添加任何说明
 
-重要说明：
-- 对于包含{{}}标记的内容，必须进行替换并移除括号，这是最重要的要求
-- 不要删除包含{{}}标记的单元格内容
-- 不要忽略任何{{}}标记
+
 
 原始表格内容：
 {table_text}
