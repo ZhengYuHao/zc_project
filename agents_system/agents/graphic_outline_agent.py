@@ -104,7 +104,6 @@ class GraphicOutlineAgent(BaseAgent):
         self.template_folder_token = settings.GRAPHIC_OUTLINE_TEMPLATE_FOLDER_TOKEN
         
         # 添加特定路由
-        self.router.post("/generate", response_model=GraphicOutlineResponse)(self.generate_outline)
         self.router.post("/feishu/sheet", response_model=dict)(self.create_feishu_sheet)
         self.router.post("/process-request", response_model=ProcessRequestResponse)(self.process_request_api)
         
@@ -203,12 +202,12 @@ class GraphicOutlineAgent(BaseAgent):
             
             else:
                 # 处理图文规划(测试)的工作
-                planting_content = await self._generate_planting_content(processed_data)
+                planting_content = await self._generate_planting_content_cp(processed_data)
                 processed_data["planting_content"] = planting_content
                
                 
                 # 生成种草配文
-                planting_captions = await self._generate_planting_captions(processed_data, planting_content)
+                planting_captions = await self._generate_planting_captions_cp(processed_data, planting_content)
                 processed_data["planting_captions"] = planting_captions
                 
 
@@ -238,48 +237,7 @@ class GraphicOutlineAgent(BaseAgent):
                 "request_id": request_id
             }
     
-    async def generate_outline(self, request: GraphicOutlineRequest) -> GraphicOutlineResponse:
-        """
-        生成图文大纲
-        
-        Args:
-            request: 图文大纲生成请求
-            
-        Returns:
-            图文大纲生成结果
-        """
-        self.logger.info(f"Generating outline for topic: {request.topic}")
-        
-        try:
-            # 调用外部API获取大纲数据
-            outline_data = await self._generate_outline_with_llm(
-                request.topic, 
-                request.requirements, 
-                request.style or self.default_style  # 使用配置的默认风格
-            )
-            
-            # 基于模板创建飞书电子表格
-            spreadsheet_token, sheet_id = await self._create_spreadsheet_from_template(request.topic)
-            
-            # 填充数据到电子表格
-            await self._populate_spreadsheet_data(spreadsheet_token, sheet_id, outline_data)
-
-            # 构造响应
-            response = GraphicOutlineResponse(
-                outline_data=outline_data,
-                document_id=spreadsheet_token,  # 电子表格使用spreadsheet_token作为标识
-                spreadsheet_token=spreadsheet_token,
-                request_id=None
-            )
-            
-            self.logger.info(f"Successfully generated outline for topic: {request.topic}")
-            return response
-            
-        except Exception as e:
-            self.logger.error(f"Error generating outline for topic {request.topic}: {str(e)}")
-            raise
     
-    async def _generate_outline_with_llm(self, topic: str, requirements: Optional[str] = None, style: str = "标准") -> Dict[str, Any]:
         """
         使用大模型生成大纲数据
         
@@ -971,86 +929,6 @@ class GraphicOutlineAgent(BaseAgent):
         
         self.logger.info("Successfully aggregated and processed task results")
         return processed_outline
-    
-    async def _generate_formatted_output(self, processed_data: Dict[str, Any], planting_content: str, planting_captions: str, user_prompt: Optional[str] = None) -> str:
-        """
-        生成格式统一的输出内容，包含图文规划和配文
-        
-        Args:
-            processed_data: 处理后的数据
-            planting_content: 图文规划内容
-            planting_captions: 配文内容
-            user_prompt: 用户自定义提示词（可选）
-            
-        Returns:
-            格式统一的输出内容
-        """
-        try:
-            # 获取相关信息
-            product_name = processed_data.get("product_name", "")
-            product_highlights = processed_data.get("product_highlights", "")
-            target_audience = ""
-            blogger_style = processed_data.get("note_style", "")
-            selling_points = ""
-            product_category = ""
-            requirements = processed_data.get("requirements", "")
-            
-            # 从sections中提取目标人群和卖点信息
-            sections = processed_data.get("sections", {})
-            content_requirement = ""
-            endorsement = ""
-            output = ""
-            
-            if isinstance(sections, dict):
-                target_audience = sections.get("target_audience", "")
-                selling_points = sections.get("selling_points", "")
-                product_category = sections.get("product_category", "")
-                content_requirement = sections.get("required_content", "")
-                endorsement = sections.get("product_endorsement", "")
-                main_topic = sections.get("main_topic", "")
-            
-            # 构建系统提示词
-            system_prompt = f"""## 任务
-接收配文、图文规划、话题，按照要求格式正确输出
-
-## 强制输出格式和内容（配文{planting_captions}、图文规划[{planting_content}]、话题填写到对应的位置，其它内容以空白形式填写）
-**账号名称**
-
-**主页链接**
-
-**发布时间**
-
-**合作形式**
-
-**内容主题方向**            
-
-**图片数量**
-供选图（15）张，发布（9）张
-**发布配文**
-
-**发布话题**
-
-**🔺拍摄注意事项，需仔细阅读**
-1.光线问题：不要逆光拍摄！拍出来素材不可用，补拍风险极高，整体画面需呈现明亮感
-2.素材数量：素材尽可能多拍多拍多拍！后期调整起来方便，也避免进行补拍，节省双方时间
-3.画面清晰：其中特写镜头产品一定要拍的清晰，近景镜头也要清晰一些，不可以模糊虚焦。
-
-
-2. 仅“配文”“图文规划”2个字段填写对应内容（`{planting_content}`填图文规划，`{planting_captions}`填配文），图文规划的图片类型、图片规划、备注是3列要填写在对应位置；{main_topic}填发布话题）
-3. 其余字段的第二列留空，不填任何信息；
-4. 确保表格整洁、易读，符合标准 Markdown 语法。
-"""
-            
-            # 使用用户提示词或系统提示词
-            prompt = user_prompt if user_prompt else system_prompt
-            
-            from models.doubao import call_doubao
-            formatted_output = await call_doubao(prompt)
-            return formatted_output
-            
-        except Exception as e:
-            self.logger.error(f"Error generating formatted output: {str(e)}")
-            return "格式化输出生成失败"
 
     async def _generate_planting_captions(self, processed_data: Dict[str, Any], planting_content: str, user_prompt: Optional[str] = None) -> str:
         """
@@ -1142,6 +1020,76 @@ class GraphicOutlineAgent(BaseAgent):
         except Exception as e:
             self.logger.error(f"Error generating planting captions: {str(e)}")
             return "种草配文生成失败"
+    
+    async def _generate_planting_captions_cp(self, processed_data: Dict[str, Any], planting_content: str, user_prompt: Optional[str] = None) -> str:
+        """
+        生成测评类图文的配文内容
+        
+        Args:
+            processed_data: 处理后的数据
+            planting_content: 已生成的图文规划内容
+            user_prompt: 用户自定义提示词（可选）
+            
+        Returns:
+            生成的测评类配文内容
+        """
+        try:
+            # 获取相关信息
+            product_name = processed_data.get("product_name", "")
+            product_highlights = processed_data.get("product_highlights", "")
+            blogger_style = processed_data.get("note_style", "")
+            selling_points = ""
+            product_category = ""
+            requirements = processed_data.get("requirements", "")
+            notice = ""  # 注意事项
+            content_requirement = ""  # 内容方向建议
+            output = planting_content  # 图文规划内容
+            
+            # 从sections中提取信息
+            sections = processed_data.get("sections", {})
+            
+            if isinstance(sections, dict):
+                selling_points = sections.get("selling_points", "")
+                product_category = sections.get("product_category", "")
+                notice = sections.get("notice", "")
+                content_requirement = sections.get("required_content", "")
+            
+            # 构建系统提示词
+            system_prompt = f"""# 角色
+你是一名真实用户视角的专业测评博主，拥有至少5年的{product_category}行业深度测评经验。擅长以第一人称写作，创作自然真实且极具吸引力与公信力的测评笔记，能够用Z世代语言解析产品内核，符合小红书或抖音等平台的内容风格。也精通避坑选购指南的撰写，针对{product_category}提供实用选购建议。
+
+## 全局要求
+使用真实自然的第一人称叙述风格，语言生动亲切，体现真实使用感受
+
+## 技能
+1. 理解图片规划{output}、注意事项{notice}、内容方向{content_requirement}，卖点{selling_points}，按照图片规划的逻辑和内容生成配文，同时要遵从创作要求{requirements}，符合内容方向。必须要有产品的介绍，产品在日常使用中的实际体验和效果，卖点（自然的融入到正文中，不能直接搬抄{selling_points}）
+配文结构：标题、正文、收尾。
+标题：引入部分，要引起共鸣
+正文：
+收尾：关联主题，让更多人使用产品
+
+## 强制输出格式要求
+**一、笔记配文**
+- **标题**：生成5个富有创意且吸引力的标题，巧妙融入emoji表情，提升趣味性和点击率，**字数控制在20字以内**。
+- **正文**：严格按照指定的创作结构撰写，正文内容需基于真实数据和专业分析，风格自然可信。段落简短（3-5句），避免镜头语言和剧本式表述。不含价格信息或门店推荐（除非【创作要求】提及）。**全文控制在800字以内**。
+- **标签**：输出【产品卖点】中要求的必带话题，同时输出3-4个符合规范的标签，包含主话题、精准话题、流量话题。
+
+## 限制
+1. 内容必须围绕产品测评和避坑选购指南，避免偏离主题。
+2. 保持竞品对比客观中立，侧重自家优势但不过度贬低其他产品。
+3. 文中所有数据来源需保证真实性，提高公信力（引用可在内容中以【】等符号隐晦表示）
+"""
+            
+            # 使用用户提示词或系统提示词
+            prompt = user_prompt if user_prompt else system_prompt
+            
+            from models.doubao import call_doubao
+            captions_content = await call_doubao(prompt)
+            return captions_content
+            
+        except Exception as e:
+            self.logger.error(f"Error generating planting captions: {str(e)}")
+            return "测评配文生成失败"
 
     async def _generate_planting_content(self, processed_data: Dict[str, Any], user_prompt: Optional[str] = None) -> str:
         """
@@ -1325,6 +1273,112 @@ XX（图片的文字内容）
         except Exception as e:
             self.logger.error(f"Error generating planting content: {str(e)}")
             return "种草图文规划生成失败"
+    async def _generate_planting_content_cp(self, processed_data: Dict[str, Any], user_prompt: Optional[str] = None) -> str:
+        """
+        生成测评类图文规划内容
+        
+        Args:
+            processed_data: 处理后的数据
+            user_prompt: 用户自定义提示词（可选）
+            
+        Returns:
+            生成的测评类图文规划内容
+        """
+        try:
+            # 获取相关信息
+            product_name = processed_data.get("product_name", "")
+            product_highlights = processed_data.get("product_highlights", "")
+            blogger_style = processed_data.get("note_style", "")
+            selling_points = ""
+            product_category = ""
+            requirements = processed_data.get("requirements", "")
+            notice = ""  # 注意事项
+            content_requirement = ""  # 内容方向建议
+            picture_number = 6  # 默认图片数量
+            
+            # 从sections中提取信息
+            sections = processed_data.get("sections", {})
+            
+            if isinstance(sections, dict):
+                selling_points = sections.get("selling_points", "")
+                product_category = sections.get("product_category", "")
+                notice = sections.get("notice", "")
+                content_requirement = sections.get("required_content", "")
+                # 如果有指定图片数量，使用指定数量
+                picture_number_str = sections.get("picture_number")
+                if picture_number_str is not None:
+                    try:
+                        picture_number = int(picture_number_str)
+                    except (ValueError, TypeError):
+                        picture_number = 10
+                else:
+                    picture_number = 10
+            
+            # 构建系统提示词
+            system_prompt = f"""# 角色
+你是小红书图文规划架构师，擅长生成适用于小红书的图文规划大纲，涵盖选购攻略、深度测评、横向对比三种类型内容。你能够将核心信息点合理拆分到图片中，形成相互关联且连贯的图片逻辑，创作纯文字的笔记。
+
+## 产品背景信息
+- 产品名称：{product_name}
+- 产品品类：{product_category}
+- 卖点：{selling_points}
+
+## 技能
+1. 理解注意事项{notice}、内容方向建议{content_requirement}，将以上两个信息都考虑在内，其中注意事项为第一优先级，生成一份整合后的创作方向。
+
+2. 规划图文结构
+结合整合后的创作方向、产品品类、产品背景信息，写出{picture_number}张图片的规划 ，规划每张图的类型及其用途。  
+常见图片类型与适配策略示例：
+- **大字报图**：突出观点/标题，常用于封面图或引流使用。
+- **参数拉表型**：用于展示多品牌产品的硬件参数、功能维度，横向对比为主，表格结构清晰、信息密度高，常用于封面图或第1张图。
+- **图文混排图**：用于承载复杂信息，如展示对比逻辑、选购逻辑、评测流程、结论观点，可配图标/图形/产品图，是选购类、测评类的主要输出载体。
+- **总结推荐图**：用于综合评估与推荐建议，搭配标签或图标说明推荐理由，常用于最后一张图。
+# 测评/对比类（强调"信任感+真实性"）叙事框架
+选择最合适产品和达人风格的框架，规划图片
+* 单品深度测评
+  - 框架：外观 & 功能 → 使用场景演示 → 数据/效果反馈 → 总结推荐理由
+  - 示例：新鞋10KM实战测评
+* 硬核测评 / 实验拆解类
+  - 框架：亮出产品 → 测评维度  → 实验方法（模拟真实使用场景 or 实验室测试）  → 分维度展示测试结果  → 综合结论（选购建议）
+  - 示例：新鞋全方位硬核测评（高处扔鸡蛋测回弹缓震、湿地测抓地等）
+* 横向对比测评
+  - 框架：A产品 vs B产品（或多款竞品） → 测评维度  → 同维度实测 → 结果展示 （重复以上直到测评维度介绍完）→ 综合结论（选购建议，推荐本品）
+* 同品牌多款测评
+  - 框架：品牌背景（先介绍为什么要选购，或者本期内容的背景） → 各系列/型号横向介绍 → 适配的使用场景/人群匹配 → 选购建议 →  行动号召
+* 榜单推荐
+  - 框架：场景/需求/主题切入（马拉松跑鞋，双十一好价，300档以内XXX） → 榜单产品逐个介绍（ 合作产品重点突出，篇幅长点）→ 综合总结 → 选购建议 
+* 选购指南
+  - 框架：场景/需求/主题切入 → 常见错误认知 → 错误思路/踩坑案例 → 正确选购标准/选购维度 → 怎么选 → 推荐合适产品
+  
+3. 构建回复
+为每张图设定文字排版内容（标题、正文、图表结构、结论语等），正文信息要完整，要给出一个可以直接使用的版本，表达要口语化并带有场景化体验；提供对应的排版建议，包括信息布局、强调色块、表格可读性等。
+
+## 备注
+针对每张图片，列出拍摄的注意事项/补充说明
+
+# 输出内容及格式
+图片类型：XX
+图文规划：XX
+备注：XX
+
+## 创作要求
+- 核心要求：{requirements}
+- 产品卖点：{selling_points}
+- 注意事项：{notice}
+- 内容方向建议：{content_requirement}
+"""
+            
+            # 使用用户提示词或系统提示词
+            prompt = user_prompt if user_prompt else system_prompt
+            
+            from models.doubao import call_doubao
+            planting_content = await call_doubao(prompt)
+            return planting_content
+            
+        except Exception as e:
+            self.logger.error(f"Error generating planting content: {str(e)}")
+            return "测评图文规划生成失败"
+
 
 
 
