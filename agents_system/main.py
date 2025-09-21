@@ -11,6 +11,7 @@ from core.registry import registry
 from agents.text_reviewer import TextReviewerAgent
 from agents.graphic_outline_agent import GraphicOutlineAgent
 from core.feishu_callback import router as feishu_router
+from agents.wechat_api import router as wechat_router
 from utils.logger import get_logger
 from core.request_middleware import RequestIDMiddleware
 
@@ -44,8 +45,9 @@ registry.register("graphic_outline", GraphicOutlineAgent)
 # 将智能体路由添加到应用
 app.include_router(text_reviewer.router)
 app.include_router(graphic_outline.router)
-# 添加飞书回调路由
+# 添加飞书和微信回调路由
 app.include_router(feishu_router)
+app.include_router(wechat_router)
 
 # 添加根路径
 @app.get("/")
@@ -53,7 +55,9 @@ async def root():
     return {
         "message": "Welcome to Agents System",
         "version": settings.PROJECT_VERSION,
-        "agents": registry.list_agents()
+        "agents": registry.list_agents(),
+        "docs": "/docs",
+        "redoc": "/redoc"
     }
 
 @app.get("/health")
