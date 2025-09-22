@@ -297,7 +297,13 @@ class TextReviewerAgent(BaseAgent):
         Returns:
             处理结果
         """
+        # 从URL中提取文档ID（如果输入的是完整URL）
         document_id = request.document_id
+        if document_id.startswith("http"):
+            # 提取URL最后一部分作为文档ID
+            document_id = document_id.rstrip('/').split('/')[-1]
+            self.logger.info(f"Extracted document ID from URL: {document_id}")
+        
         self.logger.info(f"Processing Feishu document: {document_id}")
         
         # 获取当前请求ID
