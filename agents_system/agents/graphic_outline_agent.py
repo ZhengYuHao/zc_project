@@ -66,15 +66,27 @@ class OutlineData(BaseModel):
 
 
 class ProcessRequestInput(BaseModel):
-    """ProcessRequest输入模型"""
-    topic: str
-    product_highlights: Optional[str] = None
-    note_style: Optional[str] = None
-    product_name: Optional[str] = None
+    """ProcessRequest输入模型
+    用于图文大纲生成的输入参数模型，包含以下字段：
+    
+    字段说明：
+    - direction: 方向，内容创作的方向指导
+    - requirements: 要求，对内容的具体要求
+    - product_name: 产品名称，需要推广的产品名称
+    - notice: 备注，额外的注意事项或说明
+    - picture_number: 图片数量，要求的图片数量
+    - ProductHighlights: 产品亮点，产品的核心卖点
+    - outline_direction: 大纲方向，大纲制定的具体方向
+    - blogger_link: 博主链接，参考的博主主页链接
+    """
     direction: Optional[str] = None
-    blogger_link: Optional[str] = None
     requirements: Optional[str] = None
-    style: Optional[str] = None
+    product_name: Optional[str] = None
+    notice: Optional[str] = None
+    picture_number: Optional[str] = None
+    ProductHighlights: Optional[str] = None
+    outline_direction: Optional[str] = None
+    blogger_link: Optional[str] = None
 
 
 class ProcessRequestResponse(BaseModel):
@@ -124,7 +136,7 @@ class GraphicOutlineAgent(BaseAgent):
         RESTful API接口，用于处理process_request请求
         
         Args:
-            request: ProcessRequest输入数据
+            request: ProcessRequest输入数据 
             
         Returns:
             ProcessRequest处理结果
@@ -134,14 +146,14 @@ class GraphicOutlineAgent(BaseAgent):
         try:
             # 转换请求数据为process_request所需的格式
             request_data = {
-                "topic": request.topic,
-                "product_highlights": request.product_highlights,
-                "note_style": request.note_style,
-                "product_name": request.product_name,   
                 "direction": request.direction,
-                "blogger_link": request.blogger_link,
                 "requirements": request.requirements,
-                "style": request.style
+                "product_name": request.product_name,
+                "notice": request.notice,
+                "picture_number": request.picture_number,
+                "ProductHighlights": request.ProductHighlights,
+                "outline_direction": request.outline_direction,
+                "blogger_link": request.blogger_link
             }
             
             # 调用process_request方法
@@ -237,99 +249,6 @@ class GraphicOutlineAgent(BaseAgent):
                 "request_id": request_id
             }
     
-    
-        """
-        使用大模型生成大纲数据
-        
-        Args:
-            topic: 主题
-            requirements: 要求
-            style: 风格
-            
-        Returns:
-            生成的大纲数据
-        """
-        self.logger.info(f"Generating outline with LLM for topic: {topic}")
-        
-        # 构建提示词
-        prompt = f"""
-        请为以下主题生成一个详细的图文内容大纲：
-
-        主题：{topic}
-        风格：{style}
-        {f"特殊要求：{requirements}" if requirements else ""}
-
-        要求：
-        1. 包含3-5个章节
-        2. 每个章节包含标题、简要内容描述、建议图片数量和字数估算
-        3. 提供总字数和预计阅读时间
-        4. 以JSON格式返回结果，结构如下：
-        {{
-            "topic": "主题",
-            "sections": [
-                {{
-                    "title": "章节标题",
-                    "content": "章节内容简述",
-                    "images": ["图片建议1", "图片建议2"],
-                    "word_count": 200
-                }}
-            ],
-            "total_words": 1000,
-            "estimated_time": "5分钟"
-        }}
-
-        只返回JSON，不要包含其他内容。
-        """
-        
-        # 带重试机制的调用
-        for attempt in range(self.max_retries):
-            try:
-                # 调用大模型生成大纲
-                result_text = await call_doubao(prompt)
-                
-                # 解析JSON结果
-                import json
-                outline_data = json.loads(result_text)
-                
-                self.logger.info(f"Successfully generated outline with LLM for topic: {topic}")
-                return outline_data
-                
-            except json.JSONDecodeError as e:
-                self.logger.error(f"Failed to parse LLM response as JSON (attempt {attempt+1}/{self.max_retries}): {str(e)}")
-                if attempt == self.max_retries - 1:  # 最后一次尝试
-                    # 返回默认大纲数据
-                    default_outline = {
-                        "topic": topic,
-                        "sections": [
-                            {
-                                "title": "引言",
-                                "content": "简要介绍主题背景和重要性",
-                                "images": ["intro_image.jpg"],
-                                "word_count": 100
-                            },
-                            {
-                                "title": "主要内容",
-                                "content": "详细阐述主题的核心内容",
-                                "images": ["main_image1.jpg", "main_image2.jpg"],
-                                "word_count": 300
-                            },
-                            {
-                                "title": "总结",
-                                "content": "总结要点并提出展望",
-                                "images": [],
-                                "word_count": 50
-                            }
-                        ],
-                        "total_words": 450,
-                        "estimated_time": "3分钟"
-                    }
-                    return default_outline
-                await asyncio.sleep(1)  # 等待1秒后重试
-            except Exception as e:
-                self.logger.error(f"Error generating outline with LLM (attempt {attempt+1}/{self.max_retries}): {str(e)}")
-                if attempt == self.max_retries - 1:  # 最后一次尝试
-                    raise
-                await asyncio.sleep(1)  # 等待1秒后重试
     
     async def _create_spreadsheet_from_template(self, title: str) -> tuple:
         """
@@ -659,8 +578,8 @@ class GraphicOutlineAgent(BaseAgent):
             custom_fill_data: 自定义填充数据，格式：
                 {
                     "cells": {           # 指定单元格填充
-                        "A1": "A1值",
-                        "B2": "B2值"
+                        "A1": "A1값",
+                        "B2": "B2값"
                     }
                 }
                 
@@ -839,7 +758,7 @@ class GraphicOutlineAgent(BaseAgent):
         Args:
             spreadsheet_token: 电子表格token
             sheet_id: 工作表ID
-            cell_data: 单元格数据，格式 {"A1": "值1", "B2": "값2"}
+            cell_data: 单元格数据，格式 {"A1": "값1", "B2": "값2"}
             
         Returns:
             处理结果，包含状态和消息的字典
@@ -892,13 +811,21 @@ class GraphicOutlineAgent(BaseAgent):
         
         # 进一步处理汇总的数据
         processed_outline = {
-            "topic": request_data.get("topic", ""),
-            "product_name": request_data.get("product_name", ""),
-            "product_highlights": request_data.get("product_highlights", ""),
-            "note_style": request_data.get("note_style", ""),
-            "requirements": request_data.get("requirements", ""),
+            #达人链接得出
+            "image": request_data.get("image", ""),
+            
+             
             "direction": request_data.get("direction", ""),
-            "blogger_link": request_data.get("blogger_link", ""),
+            "requirements": request_data.get("requirements", ""),
+            "product_name": request_data.get("product_name", ""),
+            "notice": request_data.get("notice", ""),
+            
+            #达人链接得出
+            "caption": request_data.get("caption", ""),
+            
+            
+            "picture_number": request_data.get("picture_number", ""),
+            "ProductHighlights": request_data.get("ProductHighlights", ""),
             "sections": {},  # 使用字典映射方式存储
             "total_words": 0,
             "estimated_time": "5分钟"
@@ -909,12 +836,15 @@ class GraphicOutlineAgent(BaseAgent):
         
         # 定义需要处理的提取器映射关系
         extractor_mapping = {
-            "target_audience_extractor": "target_audience",
-            "required_content_extractor": "required_content", 
+            # "target_audience_extractor": "target_audience",
+            # "required_content_extractor": "required_content", 
+            #达人风格
             "blogger_style_extractor": "blogger_style",
-            "product_category_extractor": "product_category",
-            "selling_points_extractor": "selling_points",
+            # "product_category_extractor": "product_category",
+            # "selling_points_extractor": "selling_points",
+            #产品背书
             "product_endorsement_extractor": "product_endorsement",
+            #话题
             "topic_extractor": "main_topic"
         }
         
@@ -1127,139 +1057,101 @@ class GraphicOutlineAgent(BaseAgent):
                 output = sections.get("output", "")
             
             # 构建系统提示词
-            system_prompt = f"""### 角色
-你是一位专业的小红书种草图文规划师，擅长为 产品创作极具吸引力的种草类图文笔记。你的任务规划出高互动率的爆款内容的图文规划(必须要有10张图文规划的输出)，而不是视频分镜脚本。
+            system_prompt = f"""## 角色
+你是一位专业的小红书种草图文规划师，擅长为 产品创作极具吸引力的种草类图文笔记。注意，你的任务规划出高互动率的爆款内容的图文规划，而不是视频分镜脚本。
 
-## 图文规划
-图文规划 = 针对图文笔记的创作规划。
-它包含：
-- 静态画面描述（定格的场景、构图、氛围）
-- 简短的配图文案（用于图片上的花字或简短口语化表达，≤20字）
-- 必要的备注（对光线、人物表情、氛围等补充说明）
-- 图片张数要求：必须必须必须10张！！！！!！！！！！
+## 输入
+【内容方向建议】：{{content_requirement}}
+【卖点信息】：{{ProductHighlights}}
+【注意事项】：{{notice}}
+【图片数量】：{{picture_number}}
+【达人风格】：{{style}}
 
-## 产品背景信息
-- 产品名称：{product_name}
-- 产品品类：{product_category}
-- 目标人群：{target_audience}
+## 产品相关信息
+- 产品名称：{{product_name}}
 
-### 流程
-## 流程1： 
-需将创作要求的内容{requirements}作为核心约束，再将内容方向建议和必提内容中没有违背核心约束的部分与创作要求整合得到创作方向。
+### 技能
+## 技能1：
+根据【产品相关信息】、【达人风格】，确定以下拍摄场景、拍摄中出现的人物。
+遵循以下要求：
+场景：符合产品使用的主场景。
+人物：可以展示产品的人物（一定要符合达人的人设和条件）
 
-## 流程2：生成图片规划内容
-1. 根据提供的产品创作要求，内容方向建议，达人风格，从爆文笔记结构中筛选最合适的1中结构，再结合创作要求，内容方向建议得到一个最完美的创作结构。
-# 爆文笔记结构
-1.PREP结构
-- 框架公式：观点-理由-案例-观点
-- 示例文案：有了厨下净水器，还要买台式净水器吗？当然有必要！（P）→ 我台式净水器多档水温即热，还能制冰，满足四季不同需求，不用来回跑厨房取水。（R）→ 我家同时用了厨下净水器和台式净水器，煮茶、冲奶粉、做料理都很方便，用水都能选到最合适的温度。（E）→ 所以，即便有厨下净水器，台式净水器也能大大提升日常用水体验（P）。
-- 适用内容类型：测评避坑、科普背书。
-- 适配标题风格：悬念式 / 对比式 / 结论直给式。
-2. FAB卖点结构
-- 框架公式：功能 → 优势 → 好处
-- 示例文案：这款吹风机有负离子护发功能（F）→ 风力大还能快速吹干（A）→ 每天早晨节省15分钟出门时间（B）。
-- 适用内容类型：好物推荐、种草笔记。
-- 适配标题风格：数字式 / 好处直给式。
-3. 
-- 框架公式：场景代入→产品展示→卖点解析→体验强化→情感收尾
-要求整个图片规划的场景要统一；卖点部分图片规划要有花字注明卖点
-4. 反转结构
-- 框架公式：常见认知/刻板印象 → 出乎意料的反转点 → 产品价值/解决方案 → 高光收尾
-- 示例文案：开头（常见认知）：很多人觉得洗水果只要泡一泡盐水就够干净了。→ 反转点（出乎意料）：但你知道吗？盐水只能去掉一小部分污渍，真正的农残、蜡层根本搞不定！→ 产品价值（解决方案）：我后来入手了 果蔬清洗机，用高频气泡+涡流冲洗，连缝隙里的脏东西都能带走。→ 收尾（高光收尾）：以前要泡半小时还不放心，现在3分钟就能吃得安心！
-- 适用内容类型：个人经历分享、踩坑避坑。
-- 适配标题风格：反转式 / 悬念式。
-5. 盘点清单结构
-- 框架公式：引出主题 → 按序号盘点 → 每个条目简评 → 总结推荐
-- 示例文案：开学必备好物TOP3：①小米便携榨汁杯，随时喝果汁；②降噪耳机，图书馆神器；③收纳袋，宿舍整洁全靠它。
-- 适用内容类型：选购指南、合集推荐。
-- 适配标题风格：数字式 / 清单式 / 种草式。
-6. 痛点解决结构
-- 框架公式：痛点 → 加剧情绪 → 提供解决方案 → 推荐具体产品
-- 示例文案：夏日出游暴晒，皮肤晒得红热又刺痛（痛点）→ 抹涂防晒油也闷痒，出汗一擦就感觉辣辣的，超难受（情绪）→ 后来用了冰沙霜，轻薄凉感瞬间舒缓晒后肌肤（方案）→ 因为有XXX成分，真的一抹降温又保湿，晒后肌肤不再灼热，整天都清爽舒服（推荐）。
-- 适用内容类型：护肤美妆、健康护理。
-- 适配标题风格：痛点式 / 需求直击式。
-7. 选购攻略结构
-- 框架公式：误区 → 标准 → 推荐清单 → 总结
-- 示例文案：很多人买空气炸锅只看容量（误区）→ 其实功率才是关键，
-选购空气炸锅主要看这几条：①功率大小（决定加热效率和烹饪速度）②温控精准度（温度可调范围和稳定性）③内锅材质（防粘、易清洗）④安全设计（过热保护、童锁等）（标准）→ 我家用的是美的，用起来特别顺手（推荐清单）→ 功率强、温控精准，内锅防粘易清洗，还有过热保护和童锁设计，用起来既安全又方便，做饭效率也高（总结）。
-- 适用内容类型：消费选购、家电/数码。
-- 适配标题风格：攻略式 / 教程式。
-8. 挑战/实验结构
-- 框架公式：设立挑战 → 实际过程 → 结果 → 意外收获
-- 示例文案：我挑战坚持用飞利浦电动牙刷30天（挑战）→ 每天早晚都刷两分钟（过程）→ 结果牙渍真的淡了（结果）→ 牙医朋友都说效果比普通牙刷好（意外收获）。
-- 适用内容类型：健康习惯、美妆护肤、生活实验。
-- 适配标题风格：挑战式 / 故事分享式。
-9.对比结构
-- 框架公式：错误操作 → 负面结果 → 正确方法 → 正向结果
-- 示例文案：很多初跑者或中学生体测直接选碳板跑鞋（错误操作）→ 鞋子过硬，驾驭不住，跑不出成绩，还容易受伤（负面结果）→ 应该选择缓震适中、贴合脚型的入门跑鞋（正确方法）→ 跑步更舒适、步幅自然，既保护关节，又能稳定发挥体测成绩（正向结果）。
-- 适用内容类型：护发美妆、生活习惯教学。
-- 适配标题风格：对比式 / 避坑式 / 教程式。
-10.FIRE结构
-- 框架公式：事实 → 解读→ 反应 → 结果
-- 示例文案：研究显示70%的人手机没贴膜更容易碎屏（事实）→ 因为市面大部分屏幕硬度不够（解读）→ 我赶紧换了贝尔金钢化膜（反应）→ 半年摔了三次还完好无损（结果）。
-- 适用内容类型：科普背书、产品验证。
-- 适配标题风格：事实冲击式 / 避坑式。
-11.RIDE结构
-- 框架公式：风险/痛点 → 兴趣 → 差异→ 效果
-- 示例文案：秋冬如果不用加湿器（风险）→ 皮肤容易干痒、喉咙刺痛（风险）→ 我买的XX加湿器可以一晚无雾加湿（利益）→ 比普通加湿器更静音还省电（差异）→ 用了一周，房间再也不干燥了（效果）。
-- 适用内容类型：家居电器、健康产品。
-- 适配标题风格：痛点式 / 对比式 / 种草式。
-12.强化IP结构
-- 框架公式：痛点 → 用户获得感 → IP信任感 → 解决方案
-- 示例文案：很多家长发现，不管宝宝怎么吃，体重总不上去，很担心营养跟不上。（痛点）→ 也经常受到粉丝留言咨询，希望我聊一聊奶粉怎么选（用户获得感）→ 作为育婴师，我长期指导宝宝喂养，熟悉不同阶段的营养需求和消化特点。（IP信任感）→ 建议选择高吸收率、蛋白脂肪比例科学、添加益生元和DHA的配方奶粉，帮助宝宝健康增重，同时促进消化吸收，让家长更安心。（解决方案）。
-- 适用内容类型：达人分享、专业背书。
-- 适配标题风格：人设式 / 经验分享式 / 权威背书式。
+## 技能2：
+仔细分析【内容方向建议】和【注意事项】的内容，提取出与拍摄产品图片有关的信息，作为图文规划的**创作要求**。
 
-2. 结合整合后的创作方向、产品背景信息、 卖点、创作的结构，写出15张种草类产品图片的静态拍摄规划。首先，规划图片的类型。
-常见图片类型及其特点，包括但不限于：
-* 封面图：构图吸睛、情绪明确，首图抢眼吸引点击，一般为产品特写+花字、产品使用场景图、产品使用氛围图等等几类
+## 技能3：生成图片规划内容
+以展示产品为目的，写出{{picture_number}}张种草类产品图片的静态拍摄规划。按照以下图片类型及其功能，给出规划内容。同时，所有图片规划需遵循图片规划原则，图文规划**创作要求**->（技能2的结果），
+常见图片类型及其特点：
+* 封面图：构图吸睛、情绪明确，首图抢眼吸引点击，一般为产品特写、产品使用场景图、产品使用氛围图等等几类
 * 人物图：达人出镜，营造亲和信任感
 * 场景图：还原真实使用情境，增强生活感
 * 特写图：展示材质、功能细节等局部亮点
-*  对比图：同类产品对比，常用于测评或盘点类笔记
-*  总结图：以产品特写+花字形式整洁呈现使用结论、推荐理由等
+* 产品图：从各个角度展示产品，让用户快速了解产品
+* 效果图：展示智能产品的App效果截图（可选）
+# 图片规划原则
+* 场景描述要简单，重点在于展示产品（不需要细节到地毯什么颜色，墙什么颜色等等）
+* 按照确定好的拍摄场景规划所有图片的场景，避免频繁切换场景。
+* 产品与场景要绝对的融合
+* 确保图片是可以在一个时间段集中拍摄完，避免前后落差大。
+* 不要出现不符合达人风格的人物（如：单身博主出现孩子）
+* 所有图片的动作、互动设计必须真实可拍摄，避免过度夸张、不安全或不可控的动作；儿童/宠物仅安排简单自然状态，不要求复杂配合。
+* 道具简化
+* 保证整体风格连贯性
 
-3. 然后，按照创作结构和规划好的图片类型，结合创作方向、产品背景信息、图片类型的特点、必提内容、注意事项，规划图片的内容。同时，要保证遵循拍摄约束、无重复内容。
-规划图片内容：
- 场景确定：确定拍摄的场景，尽量限定在同一场景/空间，避免频繁切换场景。
- 产品植入与场景融合：将种草产品自然融入对应场景中（例如：餐厨场景放厨电 / 餐具；客厅场景放装饰摆件 / 小家电；卧室场景放床品 / 收纳用品；卫浴场景放洗漱好物等），体现产品在真实生活里的使用状态。
-功能与优势呈现：针对产品，规划拍摄特写镜头展示核心卖点和功能。
-通过从场景细节、拍摄主体（画面核心焦点是？主体是？它的状态、动作、外观、情感？例：保温杯旁放半杯温水 + 一片柠檬；粉底液旁放一支美妆蛋 + 一张浅粉色化妆棉，道具与产品间距 5-8cm，避免杂乱。）、镜头要求（例：用 "俯拍（镜头与桌面呈 45° 角）" 或 "平拍（镜头与产品中部齐平）、画面氛围四个维度文字描述。用具体指令+可视化描述替代模糊表述。
-* 拍摄约束：
-  时间段统一：确保图片是可以在一个时间段集中拍摄完，避免前后落差大。
-  道具简化
-  不要出现不符合达人风格的人物（如：单身博主出现孩子）
-**以上直接用完整的场景描述来写，不要分点说明**
+## 技能4：生成图片的花字内容
+### 需要添加花字的情况
+1. 展示产品卖点/功能的图片规划
+- 核心目标：快速传递产品核心优势，花字可直接标注关键功能，帮助用户在 3 秒内抓取关键信息，适配功能型产品的效果对比展示场景
+===情况示例===
+美妆类：花字标注 “持妆24 小时效果”；
+家居类：花字标注 “小户型扩容神器”、“0 甲醛”
+===示例结束===
+- 要求：花字直接关联产品核心功能，无额外视觉辅助要求，重点在于 “功能/卖点关键词直达”
 
-## 流程3：生成图片的文字内容
-1. 一般对于图片规划中体现产品卖点或功能的图片需要有花字注明，其它的图片不是很需要，如果要加，确认好花字的内容。同时，确定好文字排版（大小、位置）。
+2. 展示价格/促销信息的图片规划
+- 核心目标：放大限时折扣、满减等促销敏感信息，吸引用户关注。
+===情况示例===
+ 花字标注 “持妆24 小时效果”
+ 花字标注 “小户型扩容神器”、“0 甲醛” 
+ ===示例结束===
+- 注意：避免使用 “原价” 等违规词汇，替换为 “券后价”“会员专享” 等合规表述。
 
-## 流程4：备注
+3. 展示使用步骤/教程的图片规划
+- 核心目标：清晰引导教程类内容的操作流程，降低用户理解成本，通常适配 DIY 手工、护肤流程等教程类种草内容。
+===示例===
+在图文对应位置叠加花字，如 “Step1：洁面后取适量精华”、“Step2：沿纹理涂抹面霜”
+===示例结束===
+- 要求：需搭配箭头、数字序号（如 Step1/2/3）等辅助元素，确保步骤顺序可视化，让操作流程更清晰。
+
+4. 展示情绪的图片规划
+- 判断依据：
+- 核心目标：传递博主使用产品后的情绪 / 感受，或营造场景氛围，增强种草内容的情感共鸣。
+===示例===
+用花字标注 “小小一个很好携带~”、“今天天气真好呀”
+===示例结束===
+- 注意：无需固定视觉格式，重点在于 “情绪 / 感受关键词传递”。
+
+**仔细分析图片规划的内容，对于以上需要添加花字的情况，生成符合上述要求的花字。其他情况严禁生成花字**
+### 禁止加花字情况
+- 不符合以上4类的图片
+
+## 技能5：备注
 针对每张图片，列出拍摄的注意事项
 
-## 强制输出格式
-图片类型：XX（从封面图、场景图、产品图、对比图、人物图、特写图、总结图中判断是什么类型）
-图文规划：
-XX（图片规划）
-XX（图片的文字内容）
+## 强制输出格式与内容
+图片类型：XX（从封面图、场景图、产品图、人物图、特写图、效果图中判断是什么类型）  
+图文规划：（图片规划和花字的内容）
+XX
 备注：XX
 
 ## 限制
-1. 在图片规划中，默认无需涉及任何痛点场景内容（如果选择单品种草框架是不要出现痛点内容），仅家装类产品允许通过"装修前（问题状态）vs 装修后（改善状态）"的对比形式呈现痛点。
-2. 不使用 "家人们""宝子""铁子" 等特定称呼；谁懂啊！这种语句
-3. 图文规划是"静态"的，不涉及动作过程或时间推进。
-4. 不能写成"视频分镜脚本"，不要出现"随后""过一会儿""开始""打开"等动态词。
+1. 在图片规划中，默认无需涉及任何痛点场景内容，仅家装类产品允许通过“装修前（问题状态）vs 装修后（改善状态）”的对比形式呈现痛点。
+2. 不使用 “家人们”“宝子”“铁子” 等特定称呼；谁懂啊！这种语句
+3. 图文规划是“静态”的，不涉及动作过程或时间推进。
+4. 不能写成“视频分镜脚本”，不要出现“随后”“过一会儿”“开始”“打开”等动态词。
 5. 每张图片是一个独立的定格画面，而不是连续的故事。
-
-
-## 创作要求
-- 核心要求：{requirements}
-- 产品卖点：{selling_points}
-- 内容方向：{content_requirement}
-- 产品背书：{endorsement}
-- 必提内容：{output}
-- 图片张数要求：必须必须必须10张！！！！!！！！！！
-
+6. 严禁输出图片类型、图文规划、备注以外的内容
 
 """
             

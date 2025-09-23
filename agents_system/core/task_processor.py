@@ -651,19 +651,20 @@ async def extract_product_endorsement(request_data: Dict[str, Any]) -> Dict[str,
     prompt = f"""## 角色
 你是一名专业的市场分析师，擅长从复杂的文本中提取关键的市场和信誉信息以及硬性产品数据。
 
-## 指令 1
-请从提供的产品信息{product_highlights}中，提取所有与"产品背书"相关的内容。产品背书是指任何能够增加产品可信度、权威性和吸引力的第三方认可或证明。
+## 输入
+【卖点信息】：{{ProductHighlights}}
 
-# 背书信息
+## 流程1：
+请从提供的【卖点信息】中，提取所有与“产品背书”相关的内容。产品背书是指任何能够增加产品可信度、权威性和吸引力的第三方认可或证明。
+### 背书信息
 名人/专家代言： 任何知名人士、行业专家、KOL、网红的使用推荐或公开称赞。
-媒体报道与奖项： 产品被知名媒体、杂志、网站、电视台报道或提及；获得过的行业奖项、认证或排名（如"荣获红点设计奖"、"被《时代》杂志报道"）。
-专业机构认证： 来自权威机构的安全认证、质量认证、环保认证等（如"通过FDA认证"、"获得UL安全认证"）。
-合作伙伴： 与知名品牌、机构的合作或联名（如"与NASA联合开发"、"迪士尼官方授权"）。
+媒体报道与奖项： 产品被知名媒体、杂志、网站、电视台报道或提及；获得过的行业奖项、认证或排名（如“荣获红点设计奖”、“被《时代》杂志报道”）。
+专业机构认证： 来自权威机构的安全认证、质量认证、环保认证等（如“通过FDA认证”、“获得UL安全认证”）。
+合作伙伴： 与知名品牌、机构的合作或联名（如“与NASA联合开发”、“迪士尼官方授权”）。
 
-## 指令2
-请从提供的产品信息{product_highlights}中，提取所有与"产品数据"相关的内容
+## 流程2
+请从提供的【卖点信息】中，提取所有与“产品数据”相关的内容
 产品数据是只关于产品本身性能、规格、功能的客观、可量化的硬性指标
-
 
 ## 输出格式
 **产品背书：** XX
@@ -776,17 +777,16 @@ async def extract_topic(request_data: Dict[str, Any]) -> Dict[str, Any]:
     product_highlights = request_data.get('product_highlights', '')
     
     # 构建提示词
-    prompt = f"""# 角色
-你是一位资深产品营销策略专家，拥有丰富的市场推广经验，擅长从复杂的产品信息{product_highlights}中提炼出话题
+    prompt = f"""## 角色
+你是一位资深产品营销策略专家，拥有丰富的市场推广经验，擅长从复杂的产品信息中提炼出话题
 
-# 任务
-仔细理解信息ProductHighlights提取出该产品的话题
-产品亮点：{product_highlights}
+## 任务
+仔细理解信息{{ProductHighlights}}提取出该产品的话题
 
-# 输出
+## 输出
 话题：XX
 
-# 限制
+## 限制
 只提取信息中的话题，不扩展
 """
 
@@ -846,16 +846,16 @@ async def extract_topic(request_data: Dict[str, Any]) -> Dict[str, Any]:
         # 出现异常时返回默认值
         default_response = {
             "main_topic": topic
-        }
+        } 
         logger.info(f"Returning default response: {default_response}")
         return default_response
 
 
 # 注册所有任务
-task_processor.register_task("target_audience_extractor", extract_target_audience)  # 注册目标人群提取任务
-task_processor.register_task("required_content_extractor", extract_required_content)  # 注册必提内容提取任务
+# task_processor.register_task("target_audience_extractor", extract_target_audience)  # 注册目标人群提取任务
+# task_processor.register_task("required_content_extractor", extract_required_content)  # 注册必提内容提取任务
 task_processor.register_task("blogger_style_extractor", extract_blogger_style)  # 注册达人风格理解提取任务
-task_processor.register_task("product_category_extractor", extract_product_category)  # 注册产品品类提取任务
-task_processor.register_task("selling_points_extractor", extract_selling_points)  # 注册卖点提取任务
+# task_processor.register_task("product_category_extractor", extract_product_category)  # 注册产品品类提取任务
+# task_processor.register_task("selling_points_extractor", extract_selling_points)  # 注册卖点提取任务
 task_processor.register_task("product_endorsement_extractor", extract_product_endorsement)  # 注册产品背书提取任务
 task_processor.register_task("topic_extractor", extract_topic)  # 注册话题提取任务
