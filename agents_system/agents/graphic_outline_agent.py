@@ -811,21 +811,15 @@ class GraphicOutlineAgent(BaseAgent):
         
         # 进一步处理汇总的数据
         processed_outline = {
-            #达人链接得出
-            "image": request_data.get("image", ""),
             
-             
             "direction": request_data.get("direction", ""),
             "requirements": request_data.get("requirements", ""),
             "product_name": request_data.get("product_name", ""),
             "notice": request_data.get("notice", ""),
             
-            #达人链接得出
-            "caption": request_data.get("caption", ""),
-            
-            
             "picture_number": request_data.get("picture_number", ""),
             "ProductHighlights": request_data.get("ProductHighlights", ""),
+            "outline_direction": request_data.get("outline_direction",""),
             "sections": {},  # 使用字典映射方式存储
             "total_words": 0,
             "estimated_time": "5分钟"
@@ -836,12 +830,13 @@ class GraphicOutlineAgent(BaseAgent):
         
         # 定义需要处理的提取器映射关系
         extractor_mapping = {
-            # "target_audience_extractor": "target_audience",
-            # "required_content_extractor": "required_content", 
+            
+            #达人链接得出
+            # "image": request_data.get("image", ""),
+            # "caption": request_data.get("caption", ""),
+            
             #达人风格
             "blogger_style_extractor": "blogger_style",
-            # "product_category_extractor": "product_category",
-            # "selling_points_extractor": "selling_points",
             #产品背书
             "product_endorsement_extractor": "product_endorsement",
             #话题
@@ -875,42 +870,30 @@ class GraphicOutlineAgent(BaseAgent):
         try:
             # 获取相关信息
             product_name = processed_data.get("product_name", "")
-            product_highlights = processed_data.get("product_highlights", "")
-            target_audience = ""
-            blogger_style = processed_data.get("note_style", "")
-            selling_points = ""
-            product_category = ""
-            requirements = processed_data.get("requirements", "")
-            
+            ProductHighlights = processed_data.get("ProductHighlights", "")  # 使用新的字段名
             # 从sections中提取目标人群和卖点信息
             sections = processed_data.get("sections", {})
-            content_requirement = ""
-            endorsement = ""
-            output = ""
+            requirements = processed_data.get("requirements", "")  # 内容方向建议
+            notice = processed_data.get("notice", "")  # 注意事项
+            picture_number = processed_data.get("picture_number", 6)  # 图片数量，默认为6
+            outline_direction = processed_data.get("outline_direction", "")
+           
             
             if isinstance(sections, dict):
-                target_audience = sections.get("target_audience", "")
-                selling_points = sections.get("selling_points", "")
-                product_category = sections.get("product_category", "")
-                content_requirement = sections.get("required_content", "")
-                endorsement = sections.get("product_endorsement", "")
-                output = planting_content
+                
+                blogger_style = sections.get("blogger_style", "")
             
             # 构建系统提示词
-            system_prompt = f"""# 角色
-你是一个专业的小红书与抖音笔记的配文创作者。擅长根据图文规划、创作要求、产品卖点、达人风格创作配文。
-配文：笔记的文案
-# 输入
-【创作要求】：{requirements}
-【内容方向建议】：{content_requirement}
-【卖点】：{selling_points}
-【达人风格】：{blogger_style}
-【图片规划】：{output}
+            system_prompt = f"""## 角色
+你是一个专业的小红书与抖音笔记的配文创作者。擅长根据图文规划、创作要求、产品卖点、达人风格创作配文。配文：笔记的文案
 
-【产品名称】：{product_name}
-【产品背书】：{endorsement}
-【产品品类】：{product_category}
-【图片规划】：{output}
+## 输入
+【注意事项】：{{notice}}
+【大纲方向建议】：{{outline_direction}}
+【卖点信息】：{{ProductHighlights}}
+【达人风格】：{{blogger_style}}
+【图片规划】：{{planting_content}}
+【创作建议】：{{requirements}}
 
 ## 全局要求
 使用真实自然的第一人称叙述风格，语言生动亲切，体现真实使用感受
@@ -919,25 +902,88 @@ class GraphicOutlineAgent(BaseAgent):
 3. **收尾不强迫**：引导像“顺手分享”，甚至可以不分享，比如“可以试试”，而非“赶紧买”。
 
 ## 禁止话术
-不使用 “家人们”“宝子”“铁子” 等特定称呼
+- 不使用 “家人们”“宝子”“铁子” 等特定称呼
 
 ### 技能
-1. 理解图片规划的内容，按照图片规划的创作结构创作配文
+## 技能1
+1. 根据【大纲方向建议】选择一个合适的结构作为配文创作的框架，再结合【大纲方向建议】、【创作要求】、【注意事项】、【卖点信息】生成创作配文的大纲。（注意事项为最高优先级，大纲严禁违背注意事项的内容）（【大纲方向建议】、【创作要求】都属于创作的方向，但以【大纲方向建议】为第一优先级）
+# 爆文笔记结构
+1.PREP结构
+- 框架公式：观点-理由-案例-观点
+- 示例文案：有了厨下净水器，还要买台式净水器吗？当然有必要！（P）→ 我台式净水器多档水温即热，还能制冰，满足四季不同需求，不用来回跑厨房取水。（R）→ 我家同时用了厨下净水器和台式净水器，煮茶、冲奶粉、做料理都很方便，用水都能选到最合适的温度。（E）→ 所以，即便有厨下净水器，台式净水器也能大大提升日常用水体验（P）。
+- 适用内容类型：测评避坑、科普背书。
+- 适配标题风格：悬念式 / 对比式 / 结论直给式。
+2. FAB卖点结构
+- 框架公式：功能 → 优势 → 好处
+- 示例文案：这款吹风机有负离子护发功能（F）→ 风力大还能快速吹干（A）→ 每天早晨节省15分钟出门时间（B）。
+- 适用内容类型：好物推荐、种草笔记。
+- 适配标题风格：数字式 / 好处直给式。
+3. 场景递进结构
+- 框架公式：场景代入→产品展示→卖点解析→体验强化→情感收尾
+要求整个图片规划的场景要统一；卖点部分图片规划要有花字注明卖点
+4. 反转结构
+- 框架公式：常见认知/刻板印象 → 出乎意料的反转点 → 产品价值/解决方案 → 高光收尾
+- 示例文案：开头（常见认知）：很多人觉得洗水果只要泡一泡盐水就够干净了。→ 反转点（出乎意料）：但你知道吗？盐水只能去掉一小部分污渍，真正的农残、蜡层根本搞不定！→ 产品价值（解决方案）：我后来入手了 果蔬清洗机，用高频气泡+涡流冲洗，连缝隙里的脏东西都能带走。→ 收尾（高光收尾）：以前要泡半小时还不放心，现在3分钟就能吃得安心！
+- 适用内容类型：个人经历分享、踩坑避坑。
+- 适配标题风格：反转式 / 悬念式。
+5. 盘点清单结构
+- 框架公式：引出主题 → 按序号盘点 → 每个条目简评 → 总结推荐
+- 示例文案：开学必备好物TOP3：①小米便携榨汁杯，随时喝果汁；②降噪耳机，图书馆神器；③收纳袋，宿舍整洁全靠它。
+- 适用内容类型：选购指南、合集推荐。
+- 适配标题风格：数字式 / 清单式 / 种草式。
+6. 痛点解决结构
+- 框架公式：痛点 → 加剧情绪 → 提供解决方案 → 推荐具体产品
+- 示例文案：夏日出游暴晒，皮肤晒得红热又刺痛（痛点）→ 抹涂防晒油也闷痒，出汗一擦就感觉辣辣的，超难受（情绪）→ 后来用了冰沙霜，轻薄凉感瞬间舒缓晒后肌肤（方案）→ 因为有XXX成分，真的一抹降温又保湿，晒后肌肤不再灼热，整天都清爽舒服（推荐）。
+- 适用内容类型：护肤美妆、健康护理。
+- 适配标题风格：痛点式 / 需求直击式。
+7. 选购攻略结构
+- 框架公式：误区 → 标准 → 推荐清单 → 总结
+- 示例文案：很多人买空气炸锅只看容量（误区）→ 其实功率才是关键，
+选购空气炸锅主要看这几条：①功率大小（决定加热效率和烹饪速度）②温控精准度（温度可调范围和稳定性）③内锅材质（防粘、易清洗）④安全设计（过热保护、童锁等）（标准）→ 我家用的是美的，用起来特别顺手（推荐清单）→ 功率强、温控精准，内锅防粘易清洗，还有过热保护和童锁设计，用起来既安全又方便，做饭效率也高（总结）。
+- 适用内容类型：消费选购、家电/数码。
+- 适配标题风格：攻略式 / 教程式。
+8. 挑战/实验结构
+- 框架公式：设立挑战 → 实际过程 → 结果 → 意外收获
+- 示例文案：我挑战坚持用飞利浦电动牙刷30天（挑战）→ 每天早晚都刷两分钟（过程）→ 结果牙渍真的淡了（结果）→ 牙医朋友都说效果比普通牙刷好（意外收获）。
+- 适用内容类型：健康习惯、美妆护肤、生活实验。
+- 适配标题风格：挑战式 / 故事分享式。
+9.对比结构
+- 框架公式：错误操作 → 负面结果 → 正确方法 → 正向结果
+- 示例文案：很多初跑者或中学生体测直接选碳板跑鞋（错误操作）→ 鞋子过硬，驾驭不住，跑不出成绩，还容易受伤（负面结果）→ 应该选择缓震适中、贴合脚型的入门跑鞋（正确方法）→ 跑步更舒适、步幅自然，既保护关节，又能稳定发挥体测成绩（正向结果）。
+- 适用内容类型：护发美妆、生活习惯教学。
+- 适配标题风格：对比式 / 避坑式 / 教程式。
+10.FIRE结构
+- 框架公式：事实 → 解读→ 反应 → 结果
+- 示例文案：研究显示70%的人手机没贴膜更容易碎屏（事实）→ 因为市面大部分屏幕硬度不够（解读）→ 我赶紧换了贝尔金钢化膜（反应）→ 半年摔了三次还完好无损（结果）。
+- 适用内容类型：科普背书、产品验证。
+- 适配标题风格：事实冲击式 / 避坑式。
+11.RIDE结构
+- 框架公式：风险/痛点 →兴趣 → 差异→ 效果
+- 示例文案：秋冬如果不用加湿器（风险）→ 皮肤容易干痒、喉咙刺痛（风险）→ 我买的XX加湿器可以一晚无雾加湿（利益）→ 比普通加湿器更静音还省电（差异）→ 用了一周，房间再也不干燥了（效果）。
+- 适用内容类型：家居电器、健康产品。
+- 适配标题风格：痛点式 / 对比式 / 种草式。
+12.强化IP结构
+- 框架公式：痛点 → 用户获得感 → IP信任感 → 解决方案
+- 示例文案：很多家长发现，不管宝宝怎么吃，体重总不上去，很担心营养跟不上。（痛点）→ 也经常受到粉丝留言咨询，希望我聊一聊奶粉怎么选（用户获得感）→ 作为育婴师，我长期指导宝宝喂养，熟悉不同阶段的营养需求和消化特点。（IP信任感）→ 建议选择高吸收率、蛋白脂肪比例科学、添加益生元和DHA的配方奶粉，帮助宝宝健康增重，同时促进消化吸收，让家长更安心。（解决方案）。
+- 适用内容类型：达人分享、专业背书。
+- 适配标题风格：人设式 / 经验分享式 / 权威背书式。
 
 2. 创作配文
-理解提供的产品创作要求，内容方向建议，达人风格，卖点，必提内容
+根据技能1得到的创作大纲和输入的【达人风格】创作配文。
 核心依据：按照图片规划的创作结构创作配文，配文可以适当关联图片的内容
 风格适配：配文的语言风格、内容呈现方式、表达逻辑等需与达人的风格相似
-卖点融合：配文需自然的融合卖点
-创作要求落地：配文要遵守创作要求
-
+卖点融合：配文需自然的融合卖点，严禁搬抄输入的【卖点信息】和生硬堆砌
+注意事项落地：配文严禁违背【注意事项】
 * 配文结构：标题、正文、收尾。
 
-## 强制输出格式要求
+## 强制输出格式和内容
 **一、笔记配文**
 - **标题**：生成5个富有创意且吸引力的标题，巧妙融入emoji表情，提升趣味性和点击率，**字数控制在20字以内**。
-- **正文**：严格按照指定的创作结构撰写，正文内容需基于真实数据和专业分析，风格自然可信。避免镜头语言和剧本式表述。不含价格信息或门店推荐（除非【创作要求】提及）。巧妙融入少量emoji表情。**全文控制在800字以内**。
-- **标签**：输出【产品卖点】中要求的必带话题，同时输出3-4个符合规范的标签，包含主话题、精准话题、流量话题。
+- **正文**：严格按照指定的创作结构撰写，正文内容需基于真实数据和专业分析，风格自然可信。避免镜头语言和剧本式表述。不含价格信息或门店推荐（除非【注意事项】提及）。巧妙融入少量emoji表情。**全文控制在800字以内**。
+- **标签**：输出【卖点信息】中要求的必带话题，同时输出3-4个符合规范的标签，包含主话题、精准话题、流量话题。
+
+## 限制
+- 严禁输出笔记配文之外的其它内容
 """
             
             # 使用用户提示词或系统提示词
@@ -966,43 +1012,44 @@ class GraphicOutlineAgent(BaseAgent):
         try:
             # 获取相关信息
             product_name = processed_data.get("product_name", "")
-            product_highlights = processed_data.get("product_highlights", "")
-            blogger_style = processed_data.get("note_style", "")
-            selling_points = ""
-            product_category = ""
-            requirements = processed_data.get("requirements", "")
-            notice = ""  # 注意事项
-            content_requirement = ""  # 内容方向建议
-            output = planting_content  # 图文规划内容
-            
-            # 从sections中提取信息
+            ProductHighlights = processed_data.get("ProductHighlights", "")  # 使用新的字段名
+            # 从sections中提取目标人群和卖点信息
             sections = processed_data.get("sections", {})
+            requirements = processed_data.get("requirements", "")  # 内容方向建议
+            notice = processed_data.get("notice", "")  # 注意事项
+            picture_number = processed_data.get("picture_number", 6)  # 图片数量，默认为6
+            outline_direction = processed_data.get("outline_direction", "")
+           
             
             if isinstance(sections, dict):
-                selling_points = sections.get("selling_points", "")
-                product_category = sections.get("product_category", "")
-                notice = sections.get("notice", "")
-                content_requirement = sections.get("required_content", "")
+                
+                blogger_style = sections.get("blogger_style", "")
             
             # 构建系统提示词
-            system_prompt = f"""# 角色
-你是一名真实用户视角的专业测评博主，拥有至少5年的{product_category}行业深度测评经验。擅长以第一人称写作，创作自然真实且极具吸引力与公信力的测评笔记，能够用Z世代语言解析产品内核，符合小红书或抖音等平台的内容风格。也精通避坑选购指南的撰写，针对{product_category}提供实用选购建议。
+            system_prompt = f"""## 角色
+你是一名真实用户视角的专业测评博主。擅长以第一人称写作，创作自然真实且极具吸引力与公信力的测评笔记，能够用Z世代语言解析产品内核，符合小红书或抖音等平台的内容风格。
+
+## 输入
+【大纲方向建议】：{{outline_direction}}
+【卖点信息】：{{ProductHighlights}}
+【图片规划】：{{planting_content}}
+【注意事项】：{{notice}}
+【创作要求】：{{requirements}}
 
 ## 全局要求
-使用真实自然的第一人称叙述风格，语言生动亲切，体现真实使用感受
+- 使用真实自然的第一人称叙述风格，语言生动亲切，体现真实使用感受
 
 ## 技能
-1. 理解图片规划{output}、注意事项{notice}、内容方向{content_requirement}，卖点{selling_points}，按照图片规划的逻辑和内容生成配文，同时要遵从创作要求{requirements}，符合内容方向。必须要有产品的介绍，产品在日常使用中的实际体验和效果，卖点（自然的融入到正文中，不能直接搬抄{selling_points}）
+1. 理解【图片规划】、【注意事项】、【大纲方向建议】，【创作要求】、【卖点信息】，按照图片规划的逻辑和内容生成配文，同时要遵从足以事项，符合内容方向。必须要有产品的介绍，产品在日常使用中的实际体验和效果，卖点（自然的融入到正文中，严禁直接搬抄产品卖点的内容）。（【大纲方向建议】、【创作要求】都属于创作的方向，但以【大纲方向建议】为第一优先级）
 配文结构：标题、正文、收尾。
 标题：引入部分，要引起共鸣
-正文：
 收尾：关联主题，让更多人使用产品
 
 ## 强制输出格式要求
 **一、笔记配文**
 - **标题**：生成5个富有创意且吸引力的标题，巧妙融入emoji表情，提升趣味性和点击率，**字数控制在20字以内**。
-- **正文**：严格按照指定的创作结构撰写，正文内容需基于真实数据和专业分析，风格自然可信。段落简短（3-5句），避免镜头语言和剧本式表述。不含价格信息或门店推荐（除非【创作要求】提及）。**全文控制在800字以内**。
-- **标签**：输出【产品卖点】中要求的必带话题，同时输出3-4个符合规范的标签，包含主话题、精准话题、流量话题。
+- **正文**：严格按照指定的创作结构撰写，正文内容需基于真实数据和专业分析，风格自然可信。段落简短（3-5句），避免镜头语言和剧本式表述。不含价格信息或门店推荐（除非【注意事项】提及）。**全文控制在800字以内**。
+- **标签**：输出【产品信息】中要求的必带话题，同时输出3-4个符合规范的标签，包含主话题、精准话题、流量话题。
 
 ## 限制
 1. 内容必须围绕产品测评和避坑选购指南，避免偏离主题。
@@ -1035,37 +1082,32 @@ class GraphicOutlineAgent(BaseAgent):
         try:
             # 获取相关信息
             product_name = processed_data.get("product_name", "")
-            product_highlights = processed_data.get("product_highlights", "")
-            target_audience = ""
-            blogger_style = processed_data.get("note_style", "")
-            selling_points = ""
-            product_category = ""
-            requirements = processed_data.get("requirements", "")
-            
+            ProductHighlights = processed_data.get("ProductHighlights", "")  # 使用新的字段名
             # 从sections中提取目标人群和卖点信息
             sections = processed_data.get("sections", {})
-            content_requirement = ""
-            endorsement = ""
-            output = ""
+            requirements = processed_data.get("requirements", "")  # 内容方向建议
+            notice = processed_data.get("notice", "")  # 注意事项
+            picture_number = processed_data.get("picture_number", 6)  # 图片数量，默认为6
+            outline_direction = processed_data.get("outline_direction", "")
+           
             
             if isinstance(sections, dict):
-                target_audience = sections.get("target_audience", "")
-                selling_points = sections.get("selling_points", "")
-                product_category = sections.get("product_category", "")
-                content_requirement = sections.get("required_content", "")
-                endorsement = sections.get("product_endorsement", "")
-                output = sections.get("output", "")
+                
+                blogger_style = sections.get("blogger_style", "")
+                
             
             # 构建系统提示词
             system_prompt = f"""## 角色
 你是一位专业的小红书种草图文规划师，擅长为 产品创作极具吸引力的种草类图文笔记。注意，你的任务规划出高互动率的爆款内容的图文规划，而不是视频分镜脚本。
 
 ## 输入
-【内容方向建议】：{{content_requirement}}
+【大纲方向建议】：{{outline_direction}}
 【卖点信息】：{{ProductHighlights}}
 【注意事项】：{{notice}}
 【图片数量】：{{picture_number}}
-【达人风格】：{{style}}
+【达人风格】：{{blogger_style}}
+【创作要求】：{{requirements}}
+【产品名称】：{{product_name}}
 
 ## 产品相关信息
 - 产品名称：{{product_name}}
@@ -1074,14 +1116,14 @@ class GraphicOutlineAgent(BaseAgent):
 ## 技能1：
 根据【产品相关信息】、【达人风格】，确定以下拍摄场景、拍摄中出现的人物。
 遵循以下要求：
-场景：符合产品使用的主场景。
-人物：可以展示产品的人物（一定要符合达人的人设和条件）
+场景：符合产品使用的主场景（仅一个）。
+人物：确定展示产品的人物（一定要符合达人的人设和条件以及适配产品）
 
 ## 技能2：
-仔细分析【内容方向建议】和【注意事项】的内容，提取出与拍摄产品图片有关的信息，作为图文规划的**创作要求**。
+仔细分析【大纲方向建议】、【创作要求】和【注意事项】的内容，提取出与拍摄产品图片有关的信息，作为图文规划的**创作方向**。（【大纲方向建议】、【创作要求】都属于创作的方向，但以【大纲方向建议】为第一优先级）
 
 ## 技能3：生成图片规划内容
-以展示产品为目的，写出{{picture_number}}张种草类产品图片的静态拍摄规划。按照以下图片类型及其功能，给出规划内容。同时，所有图片规划需遵循图片规划原则，图文规划**创作要求**->（技能2的结果），
+以展示产品为目的，写出{{picture_number}}张种草类产品图片的静态拍摄规划。按照以下图片类型及其功能，给出规划内容。同时，所有图片规划需遵循图片规划原则，图文规划**创作方向**->（技能2的结果），
 常见图片类型及其特点：
 * 封面图：构图吸睛、情绪明确，首图抢眼吸引点击，一般为产品特写、产品使用场景图、产品使用氛围图等等几类
 * 人物图：达人出镜，营造亲和信任感
@@ -1124,8 +1166,8 @@ class GraphicOutlineAgent(BaseAgent):
 ===示例结束===
 - 要求：需搭配箭头、数字序号（如 Step1/2/3）等辅助元素，确保步骤顺序可视化，让操作流程更清晰。
 
-4. 展示情绪的图片规划
-- 判断依据：
+4. 通过展示情绪展示产品卖点/功能
+- 判断依据：展示产品卖点/功能的另一种方式
 - 核心目标：传递博主使用产品后的情绪 / 感受，或营造场景氛围，增强种草内容的情感共鸣。
 ===示例===
 用花字标注 “小小一个很好携带~”、“今天天气真好呀”
@@ -1144,6 +1186,7 @@ class GraphicOutlineAgent(BaseAgent):
 图文规划：（图片规划和花字的内容）
 XX
 备注：XX
+**仅输出图片类型、图文规划、备注，严禁输出其它内容**
 
 ## 限制
 1. 在图片规划中，默认无需涉及任何痛点场景内容，仅家装类产品允许通过“装修前（问题状态）vs 装修后（改善状态）”的对比形式呈现痛点。
@@ -1152,6 +1195,8 @@ XX
 4. 不能写成“视频分镜脚本”，不要出现“随后”“过一会儿”“开始”“打开”等动态词。
 5. 每张图片是一个独立的定格画面，而不是连续的故事。
 6. 严禁输出图片类型、图文规划、备注以外的内容
+7. 针对出现的人物一般称达人，其他的具体情况具体称呼
+8. 仅输出图片类型、图文规划、备注，严禁输出其它内容（拍摄场景、拍摄人物、创作方向）
 
 """
             
@@ -1177,61 +1222,59 @@ XX
             生成的测评类图文规划内容
         """
         try:
-            # 获取相关信息
+             # 获取相关信息
             product_name = processed_data.get("product_name", "")
-            product_highlights = processed_data.get("product_highlights", "")
-            blogger_style = processed_data.get("note_style", "")
-            selling_points = ""
-            product_category = ""
-            requirements = processed_data.get("requirements", "")
-            notice = ""  # 注意事项
-            content_requirement = ""  # 内容方向建议
-            picture_number = 6  # 默认图片数量
-            
-            # 从sections中提取信息
+            ProductHighlights = processed_data.get("ProductHighlights", "")  # 使用新的字段名
+            # 从sections中提取目标人群和卖点信息
             sections = processed_data.get("sections", {})
+            requirements = processed_data.get("requirements", "")  # 内容方向建议
+            notice = processed_data.get("notice", "")  # 注意事项
+            picture_number = processed_data.get("picture_number", 6)  # 图片数量，默认为6
+            outline_direction = processed_data.get("outline_direction", "")
+           
             
             if isinstance(sections, dict):
-                selling_points = sections.get("selling_points", "")
-                product_category = sections.get("product_category", "")
-                notice = sections.get("notice", "")
-                content_requirement = sections.get("required_content", "")
-                # 如果有指定图片数量，使用指定数量
-                picture_number_str = sections.get("picture_number")
-                if picture_number_str is not None:
-                    try:
-                        picture_number = int(picture_number_str)
-                    except (ValueError, TypeError):
-                        picture_number = 10
-                else:
-                    picture_number = 10
+                
+                blogger_style = sections.get("blogger_style", "")
             
             # 构建系统提示词
-            system_prompt = f"""# 角色
+            system_prompt = f"""## 角色
 你是小红书图文规划架构师，擅长生成适用于小红书的图文规划大纲，涵盖选购攻略、深度测评、横向对比三种类型内容。你能够将核心信息点合理拆分到图片中，形成相互关联且连贯的图片逻辑，创作纯文字的笔记。
 
-## 产品背景信息
-- 产品名称：{product_name}
-- 产品品类：{product_category}
-- 卖点：{selling_points}
+## 输入
+【注意事项】：{{notice}}
+【大纲方向建议】：{{outline_direction}}
+【卖点信息】：{{ProductHighlights}}
+【达人风格】：{{blogger_style}}
+【产品名称】：{{product_name}}
+【图片数量】：{{picture_number}}
+【创作要求】：{{requirements}}
+
+## 产品相关信息
+【 产品名称】：{{product_name}}
+【卖点信息】：{{ProductHighlights}}
+
+## 必备技能
+- 信息搜集和筛选能力：精准搜索创作时需要的产品、品牌等信息，并且返回适合创作的信息或数据
 
 ## 技能
-1. 理解注意事项{notice}、内容方向建议{content_requirement}，将以上两个信息都考虑在内，其中注意事项为第一优先级，生成一份整合后的创作方向。
+### 技能1：
+ 理解【注意事项】、【大纲方向建议】、【创作要求】，将以上两个信息都考虑在内，其中【注意事项】为第一优先级，生成一份整合后的**内容创作方向**。（【大纲方向建议】、【创作要求】都属于创作的方向，但以【大纲方向建议】为第一优先级）
 
-2. 规划图文结构
-结合整合后的创作方向、产品品类、产品背景信息，写出{picture_number}张图片的规划 ，规划每张图的类型及其用途。  
-常见图片类型与适配策略示例：
+### 技能2：规划图文结构
+结合整合后的**内容创作方向**和输入产品相关信息，写出{{picture_number}}张测评类产品的图片规划 ，规划每张图的类型。  
+#### 常见图片类型与特性：
 - **大字报图**：突出观点/标题，常用于封面图或引流使用。
 - **参数拉表型**：用于展示多品牌产品的硬件参数、功能维度，横向对比为主，表格结构清晰、信息密度高，常用于封面图或第1张图。
 - **图文混排图**：用于承载复杂信息，如展示对比逻辑、选购逻辑、评测流程、结论观点，可配图标/图形/产品图，是选购类、测评类的主要输出载体。
 - **总结推荐图**：用于综合评估与推荐建议，搭配标签或图标说明推荐理由，常用于最后一张图。
-# 测评/对比类（强调"信任感+真实性"）叙事框架
-选择最合适产品和达人风格的框架，规划图片
+#### 测评/对比类（强调“信任感+真实性”）叙事框架
+选择最合适产品、内容创作方向的框架
 * 单品深度测评
   - 框架：外观 & 功能 → 使用场景演示 → 数据/效果反馈 → 总结推荐理由
   - 示例：新鞋10KM实战测评
 * 硬核测评 / 实验拆解类
-  - 框架：亮出产品 → 测评维度  → 实验方法（模拟真实使用场景 or 实验室测试）  → 分维度展示测试结果  → 综合结论（选购建议）
+  - 框架：亮出产品 → 测评维度  → 实验方法（模拟真实使用场景 or 实验室测试）  → 分维度展示测试结果  → 综合结论（选购建议）  
   - 示例：新鞋全方位硬核测评（高处扔鸡蛋测回弹缓震、湿地测抓地等）
 * 横向对比测评
   - 框架：A产品 vs B产品（或多款竞品） → 测评维度  → 同维度实测 → 结果展示 （重复以上直到测评维度介绍完）→ 综合结论（选购建议，推荐本品）
@@ -1241,23 +1284,23 @@ XX
   - 框架：场景/需求/主题切入（马拉松跑鞋，双十一好价，300档以内XXX） → 榜单产品逐个介绍（ 合作产品重点突出，篇幅长点）→ 综合总结 → 选购建议 
 * 选购指南
   - 框架：场景/需求/主题切入 → 常见错误认知 → 错误思路/踩坑案例 → 正确选购标准/选购维度 → 怎么选 → 推荐合适产品
-  
-3. 构建回复
-为每张图设定文字排版内容（标题、正文、图表结构、结论语等），正文信息要完整，要给出一个可以直接使用的版本，表达要口语化并带有场景化体验；提供对应的排版建议，包括信息布局、强调色块、表格可读性等。
+
+### 技能3：生成图片规划
+- 根据内容创作方向（技能1的整合结果）、选择的框架和图片的特性创作，为每张图片设定文字排版内容（标题、正文、图表结构、结论语等(可选)），正文信息要完整，要给出一个可以直接使用的版本，表达要符合达人语言风格并带有场景化体验，内容要适配小红书笔记的图片大小（3:4）。
+- 提供对应的排版建议，包括信息布局、强调色块、表格可读性等。
 
 ## 备注
-针对每张图片，列出拍摄的注意事项/补充说明
+针对每张图片，列出注意事项/补充说明。
 
-# 输出内容及格式
+## 输出内容及格式
 图片类型：XX
 图文规划：XX
 备注：XX
+**输出图片类型、图文规划，严禁输出其它内容**
 
-## 创作要求
-- 核心要求：{requirements}
-- 产品卖点：{selling_points}
-- 注意事项：{notice}
-- 内容方向建议：{content_requirement}
+## 限制
+- 所有未提供的信息的需要通过搜索后都要写上
+- 严格遵守【注意事项】
 """
             
             # 使用用户提示词或系统提示词
