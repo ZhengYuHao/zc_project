@@ -114,13 +114,13 @@ class TaskProcessor:
         """
         # 根据任务名称和请求数据判断是否需要执行
         task_data_mapping = {
-            "target_audience_extractor": "product_highlights",
-            "required_content_extractor": "product_highlights",
+            "target_audience_extractor": "ProductHighlights",
+            "required_content_extractor": "ProductHighlights",
             "blogger_style_extractor": "blogger_link",
-            "product_category_extractor": "product_highlights",
-            "selling_points_extractor": "product_highlights",
-            "product_endorsement_extractor": "product_highlights",
-            "topic_extractor": "product_highlights"
+            "product_category_extractor": "ProductHighlights",
+            "selling_points_extractor": "ProductHighlights",
+            "product_endorsement_extractor": "ProductHighlights",
+            "topic_extractor": "ProductHighlights"
         }
         
         required_field = task_data_mapping.get(task_name)
@@ -152,20 +152,20 @@ async def extract_target_audience(request_data: Dict[str, Any]) -> Dict[str, Any
     
     # 构建提示词
     topic = request_data.get('topic', '')
-    product_highlights = request_data.get('product_highlights', '')
+    ProductHighlights = request_data.get('ProductHighlights', '')
     
     prompt = f"""# 角色
 你是一位资深产品营销策略专家，拥有丰富的市场推广经验，擅长从复杂的产品信息中提炼出目标人群
 
 ## 技能
-理解{product_highlights}提取出产品的目标人群
+理解{ProductHighlights}提取出产品的目标人群
 
 ## 输出
 目标人群：XX
 """
     
     logger.info(f"Extracting target audience for topic: {topic}")
-    logger.info(f"Product highlights: {product_highlights}")
+    logger.info(f"Product highlights: {ProductHighlights}")
     logger.info(f"Prompt: {prompt}")
     
     try:
@@ -217,7 +217,7 @@ async def extract_target_audience(request_data: Dict[str, Any]) -> Dict[str, Any
         logger.debug(f"Parse results - Target audience: '{target_audience}'")
         
         response = {
-            "target_audience": target_audience if target_audience else f"根据'{topic}'和'{product_highlights}'分析的目标人群",
+            "target_audience": target_audience if target_audience else f"根据'{topic}'和'{ProductHighlights}'分析的目标人群",
         }
         
         logger.info(f"Extract target audience result: {response}")
@@ -227,7 +227,7 @@ async def extract_target_audience(request_data: Dict[str, Any]) -> Dict[str, Any
         logger.error(f"Error extracting target audience: {str(e)}", exc_info=True)
         # 出现异常时返回默认值
         default_response = {
-            "target_audience": f"根据'{topic}'和'{product_highlights}'分析的目标人群",
+            "target_audience": f"根据'{topic}'和'{ProductHighlights}'分析的目标人群",
         }
         logger.info(f"Returning default response: {default_response}")
         return default_response
@@ -250,12 +250,12 @@ async def extract_required_content(request_data: Dict[str, Any]) -> Dict[str, An
     
     # 获取请求数据
     requirements = request_data.get('requirements', '')
-    product_highlights = request_data.get('product_highlights', '')
+    ProductHighlights = request_data.get('ProductHighlights', '')
     topic = request_data.get('topic', '')
     
     # 构建提示词
     prompt = f"""# 角色
-你是一位资深产品营销策略专家，拥有丰富的市场推广经验，擅长从复杂的产品信息{product_highlights}中提炼出必提内容、目标人群和注意事项
+你是一位资深产品营销策略专家，拥有丰富的市场推广经验，擅长从复杂的产品信息{ProductHighlights}中提炼出必提内容、目标人群和注意事项
 
 # 内容方向
 背景：在brief里面会有创作的必提内容内容方向，这些作为要求确保创作出图文大纲
@@ -268,7 +268,7 @@ async def extract_required_content(request_data: Dict[str, Any]) -> Dict[str, An
 注意事项：XX
 """
     
-    logger.info(f"Product highlights: {product_highlights}")
+    logger.info(f"Product highlights: {ProductHighlights}")
     logger.info(f"Prompt: {prompt}")
     
     try:
@@ -407,7 +407,7 @@ async def extract_product_category(request_data: Dict[str, Any]) -> Dict[str, An
     logger = get_logger("agent.task_processor")
     
     # 获取请求数据
-    product_highlights = request_data.get('product_highlights', '')
+    ProductHighlights = request_data.get('ProductHighlights', '')
     
     # 构建提示词
     prompt = f"""# 角色
@@ -416,7 +416,7 @@ async def extract_product_category(request_data: Dict[str, Any]) -> Dict[str, An
 读取文件ProductHighlights，准确识别并深入理解种草产品信息，从中精准提炼出产品所处的二级或三级分类。
 - 产品类目：着重提取产品所处的二级或三级分类。提取完成后，直接返回产品的二级或三级，甚至到四级分类（例如，制冰净水器属于厨卫家电 - 厨房家电 - 台式净饮机，只需返回最深一层的分类给我，台式净饮机）。
 
-产品亮点：{product_highlights}
+产品亮点：{ProductHighlights}
 
 # 输出格式
 产品品类：XX
@@ -506,12 +506,12 @@ async def extract_selling_points(request_data: Dict[str, Any]) -> Dict[str, Any]
     logger = get_logger("agent.task_processor")
     
     # 获取请求数据
-    product_highlights = request_data.get('product_highlights', '')
+    ProductHighlights = request_data.get('ProductHighlights', '')
     topic = request_data.get('topic', '')
     
     # 构建提示词
     prompt = f"""# 角色
-你是一位资深产品营销策略专家，拥有丰富的市场推广经验，擅长从复杂的产品信息{product_highlights}中提炼与卖点（利益点）有关的信息
+你是一位资深产品营销策略专家，拥有丰富的市场推广经验，擅长从复杂的产品信息{ProductHighlights}中提炼与卖点（利益点）有关的信息
 
 # 卖点（利益点）
 背景：在不同的业务场景下，博主需要在视频或图文笔记中植入介绍产品，产品会有一些功能（卖点）。
@@ -531,7 +531,7 @@ async def extract_selling_points(request_data: Dict[str, Any]) -> Dict[str, Any]
 * 注意：任务是从卖点信息中**提取**卖点（利益点），并且确认卖点的类型。不要自己理解出卖点，并且卖点的类型不是完全的，不要自己理解出来并没有的卖点
 类型：核心卖点（利益点）、次要卖点
 
-产品信息{product_highlights}
+产品信息{ProductHighlights}
 
 # 输出结构
 卖点类型对应的卖点
@@ -542,7 +542,7 @@ async def extract_selling_points(request_data: Dict[str, Any]) -> Dict[str, Any]
 """
     
 
-    logger.info(f"Product highlights: {product_highlights}")
+    logger.info(f"Product highlights: {ProductHighlights}")
     logger.info(f"Prompt: {prompt}")
     
     try:
@@ -623,7 +623,7 @@ async def extract_selling_points(request_data: Dict[str, Any]) -> Dict[str, Any]
         logger.error(f"Error extracting selling points: {str(e)}", exc_info=True)
         # 出现异常时返回默认值
         default_response = {
-            "selling_points": f"核心卖点: {product_highlights}",
+            "selling_points": f"核心卖点: {ProductHighlights}",
         }
         logger.info(f"Returning default response: {default_response}")
         return default_response
@@ -645,14 +645,14 @@ async def extract_product_endorsement(request_data: Dict[str, Any]) -> Dict[str,
     logger = get_logger("agent.task_processor")
     
     # 获取请求数据
-    product_highlights = request_data.get('product_highlights', '')
+    ProductHighlights = request_data.get('ProductHighlights', '')
     
     # 构建提示词
     prompt = f"""## 角色
 你是一名专业的市场分析师，擅长从复杂的文本中提取关键的市场和信誉信息以及硬性产品数据。
 
 ## 输入
-【卖点信息】：{{ProductHighlights}}
+【卖点信息】：{ProductHighlights}
 
 ## 流程1：
 请从提供的【卖点信息】中，提取所有与“产品背书”相关的内容。产品背书是指任何能够增加产品可信度、权威性和吸引力的第三方认可或证明。
@@ -671,7 +671,7 @@ async def extract_product_endorsement(request_data: Dict[str, Any]) -> Dict[str,
 **产品数据：** XX
 """
     
-    logger.info(f"Product highlights: {product_highlights}")
+    logger.info(f"Product highlights: {ProductHighlights}")
     logger.info(f"Prompt: {prompt}")
     
     try:
@@ -774,14 +774,14 @@ async def extract_topic(request_data: Dict[str, Any]) -> Dict[str, Any]:
     
     # 获取请求数据
     topic = request_data.get('topic', '')
-    product_highlights = request_data.get('product_highlights', '')
+    ProductHighlights = request_data.get('ProductHighlights', '')
     
     # 构建提示词
     prompt = f"""## 角色
 你是一位资深产品营销策略专家，拥有丰富的市场推广经验，擅长从复杂的产品信息中提炼出话题
 
 ## 任务
-仔细理解信息{{ProductHighlights}}提取出该产品的话题
+仔细理解信息{ProductHighlights}提取出该产品的话题
 
 ## 输出
 话题：XX

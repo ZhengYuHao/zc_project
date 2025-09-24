@@ -198,10 +198,10 @@ class GraphicOutlineAgent(BaseAgent):
         try:
             # 并发执行七个任务
             task_results = await task_processor.execute_tasks(request)
-            
+            self.logger.info(f"task_results graphic outline request{task_results}")
             # 汇总任务结果并进行下一步处理
             processed_data = await self._aggregate_and_process(task_results, request)
-
+            self.logger.info(f"Processing graphic outline request{processed_data}")
             if processed_data.get("note_style") == "种草":
                 # 调用豆包大模型生成种草图文规划
                 planting_content = await self._generate_planting_content(processed_data)
@@ -352,16 +352,17 @@ class GraphicOutlineAgent(BaseAgent):
             是否填充成功
         """
         self.logger.info(f"Populating spreadsheet data for spreadsheet: {spreadsheet_token}")
+        self.logger.info(f"Populating spreadsheet data for outline_data: {outline_data}")
         
         try:
             
             # 测试种草图文规划生成
-            planting_content = await self._generate_planting_content(outline_data)
-            self.logger.info("Generated planting content:")
-            self.logger.info(planting_content[:-1])
+            # planting_content = await self._generate_planting_content(outline_data)
+            # self.logger.info("Generated planting content:")
+            # self.logger.info(planting_content[:-1])
 
             # 解析图文规划内容
-            planting_data = parse_planting_content(planting_content)
+            planting_data = parse_planting_content(outline_data.get("planting_content",""))
             self.logger.info(f"Parsed planting data:{planting_data}")
             for i, data in enumerate(planting_data):
                 self.logger.info(f"  Image {i+1}:")     
@@ -371,12 +372,12 @@ class GraphicOutlineAgent(BaseAgent):
                 self.logger.info(f"    Remark: {data['remark']}")
 
             # 测试种草配文生成
-            planting_captions = await self._generate_planting_captions(outline_data, planting_content)
-            self.logger.info("\nGenerated planting captions:")
-            self.logger.info(planting_captions[:-1])
+            # planting_captions = await self._generate_planting_captions(outline_data, planting_content)
+            # self.logger.info("\nGenerated planting captions:")
+            # self.logger.info(planting_captions[:-1])
 
             # 解析配文内容
-            captions_data = parse_planting_captions(planting_captions)
+            captions_data = parse_planting_captions(outline_data.get("planting_captions",""))
             self.logger.info("Parsed captions data:")
             self.logger.info(f"  Titles: {captions_data['titles']}")
             self.logger.info(f"  Body length: {captions_data['body']}")
@@ -388,19 +389,19 @@ class GraphicOutlineAgent(BaseAgent):
             
             # 准备要写入的数据（只写入特定单元格数据）
             cell_data = {
-                "B1": "",  # 在B1单元格插入"你好"
-                "B2": "",  # 在B2单元格插入"你好"
-                "B3": "",  # 在B3单元格插入"你好"
-                "B4": "",  # 在B4单元格插入"你好"
-                "B5": "",  # 在B5单元格插入"你好"
-                "B6": "",  # 在B6单元格插入"你好"
-                "B7": "",  # 在B7单元格插入"你好"
-                "B8": captions_data['body'],  # 在B8单元格插入"你好"
-                "B9": outline_data.get("sections", {}).get("main_topic", ""),  # 在B9单元格插入"你好"
-                "C2": "",  # 在C2单元格插入"你好"
-                "D6": outline_data.get("selling_points"),  # 在D单元格插入"你好"
-                "E2": outline_data.get("blogger_style"),  # 在E2单元格插入"你好"
-                "F6": outline_data.get("product_endorsement"),  # 在F6单元格插入"你好"
+                "B1": "",  
+                "B2": "",  
+                "B3": "",  
+                "B4": "", 
+                "B5": "",  
+                "B6": "",  
+                "B7": "",  
+                "B8": captions_data['body'],  
+                "B9": outline_data.get("sections", {}).get("main_topic", ""),  
+                "C2": "",  
+                "D6": "",  
+                "E2": "",  
+                "F6": "",  
             }
             
             # 安全地处理planting_data数组，避免数组越界问题
@@ -799,6 +800,7 @@ class GraphicOutlineAgent(BaseAgent):
             处理后的数据
         """
         self.logger.info("Aggregating and processing task results")
+        self.logger.info(f"Request data received: {request_data}")
         
         # 汇总所有任务的成功结果
         aggregated_data = {}
@@ -824,7 +826,9 @@ class GraphicOutlineAgent(BaseAgent):
             "total_words": 0,
             "estimated_time": "5分钟"
         }
-        self.logger.info(f"Aggregating and processing task results  {aggregated_data}")
+        self.logger.info(f"Aggregating and processing task results: {aggregated_data}")
+        self.logger.info(f"Processed outline data: {processed_outline}")
+        
         # 根据任务结果生成大纲章节
         sections = {}
         
@@ -848,7 +852,7 @@ class GraphicOutlineAgent(BaseAgent):
             if extractor_key in aggregated_data:
                 extractor_data = aggregated_data[extractor_key]
                 sections[section_key] = extractor_data.get(section_key, "")
-        
+        self.logger.info(f"sections{sections}")
         processed_outline["sections"] = sections
         processed_outline["total_words"] = sum(len(str(content)) for content in sections.values())
         
@@ -888,12 +892,12 @@ class GraphicOutlineAgent(BaseAgent):
 你是一个专业的小红书与抖音笔记的配文创作者。擅长根据图文规划、创作要求、产品卖点、达人风格创作配文。配文：笔记的文案
 
 ## 输入
-【注意事项】：{{notice}}
-【大纲方向建议】：{{outline_direction}}
-【卖点信息】：{{ProductHighlights}}
-【达人风格】：{{blogger_style}}
-【图片规划】：{{planting_content}}
-【创作建议】：{{requirements}}
+【注意事项】：{notice}
+【大纲方向建议】：{outline_direction}
+【卖点信息】：{ProductHighlights}
+【达人风格】：{blogger_style}
+【图片规划】：{planting_content}
+【创作建议】：{requirements}
 
 ## 全局要求
 使用真实自然的第一人称叙述风格，语言生动亲切，体现真实使用感受
@@ -1030,11 +1034,11 @@ class GraphicOutlineAgent(BaseAgent):
 你是一名真实用户视角的专业测评博主。擅长以第一人称写作，创作自然真实且极具吸引力与公信力的测评笔记，能够用Z世代语言解析产品内核，符合小红书或抖音等平台的内容风格。
 
 ## 输入
-【大纲方向建议】：{{outline_direction}}
-【卖点信息】：{{ProductHighlights}}
-【图片规划】：{{planting_content}}
-【注意事项】：{{notice}}
-【创作要求】：{{requirements}}
+【大纲方向建议】：{outline_direction}
+【卖点信息】：{ProductHighlights}
+【图片规划】：{planting_content}
+【注意事项】：{notice}
+【创作要求】：{requirements}
 
 ## 全局要求
 - 使用真实自然的第一人称叙述风格，语言生动亲切，体现真实使用感受
@@ -1101,16 +1105,16 @@ class GraphicOutlineAgent(BaseAgent):
 你是一位专业的小红书种草图文规划师，擅长为 产品创作极具吸引力的种草类图文笔记。注意，你的任务规划出高互动率的爆款内容的图文规划，而不是视频分镜脚本。
 
 ## 输入
-【大纲方向建议】：{{outline_direction}}
-【卖点信息】：{{ProductHighlights}}
-【注意事项】：{{notice}}
-【图片数量】：{{picture_number}}
-【达人风格】：{{blogger_style}}
-【创作要求】：{{requirements}}
-【产品名称】：{{product_name}}
+【大纲方向建议】：{outline_direction}
+【卖点信息】：{ProductHighlights}
+【注意事项】：{notice}
+【图片数量】：{picture_number}
+【达人风格】：{blogger_style}
+【创作要求】：{requirements}
+【产品名称】：{product_name}
 
 ## 产品相关信息
-- 产品名称：{{product_name}}
+- 产品名称：{product_name}
 
 ### 技能
 ## 技能1：
@@ -1123,7 +1127,7 @@ class GraphicOutlineAgent(BaseAgent):
 仔细分析【大纲方向建议】、【创作要求】和【注意事项】的内容，提取出与拍摄产品图片有关的信息，作为图文规划的**创作方向**。（【大纲方向建议】、【创作要求】都属于创作的方向，但以【大纲方向建议】为第一优先级）
 
 ## 技能3：生成图片规划内容
-以展示产品为目的，写出{{picture_number}}张种草类产品图片的静态拍摄规划。按照以下图片类型及其功能，给出规划内容。同时，所有图片规划需遵循图片规划原则，图文规划**创作方向**->（技能2的结果），
+以展示产品为目的，写出{picture_number}张种草类产品图片的静态拍摄规划。按照以下图片类型及其功能，给出规划内容。同时，所有图片规划需遵循图片规划原则，图文规划**创作方向**->（技能2的结果），
 常见图片类型及其特点：
 * 封面图：构图吸睛、情绪明确，首图抢眼吸引点击，一般为产品特写、产品使用场景图、产品使用氛围图等等几类
 * 人物图：达人出镜，营造亲和信任感
@@ -1242,17 +1246,17 @@ XX
 你是小红书图文规划架构师，擅长生成适用于小红书的图文规划大纲，涵盖选购攻略、深度测评、横向对比三种类型内容。你能够将核心信息点合理拆分到图片中，形成相互关联且连贯的图片逻辑，创作纯文字的笔记。
 
 ## 输入
-【注意事项】：{{notice}}
-【大纲方向建议】：{{outline_direction}}
-【卖点信息】：{{ProductHighlights}}
-【达人风格】：{{blogger_style}}
-【产品名称】：{{product_name}}
-【图片数量】：{{picture_number}}
-【创作要求】：{{requirements}}
+【注意事项】：{notice}
+【大纲方向建议】：{outline_direction}
+【卖点信息】：{ProductHighlights}
+【达人风格】：{blogger_style}
+【产品名称】：{product_name}
+【图片数量】：{picture_number}
+【创作要求】：{requirements}
 
 ## 产品相关信息
-【 产品名称】：{{product_name}}
-【卖点信息】：{{ProductHighlights}}
+【 产品名称】：{product_name}
+【卖点信息】：{ProductHighlights}
 
 ## 必备技能
 - 信息搜集和筛选能力：精准搜索创作时需要的产品、品牌等信息，并且返回适合创作的信息或数据
@@ -1262,7 +1266,7 @@ XX
  理解【注意事项】、【大纲方向建议】、【创作要求】，将以上两个信息都考虑在内，其中【注意事项】为第一优先级，生成一份整合后的**内容创作方向**。（【大纲方向建议】、【创作要求】都属于创作的方向，但以【大纲方向建议】为第一优先级）
 
 ### 技能2：规划图文结构
-结合整合后的**内容创作方向**和输入产品相关信息，写出{{picture_number}}张测评类产品的图片规划 ，规划每张图的类型。  
+结合整合后的**内容创作方向**和输入产品相关信息，写出{picture_number}张测评类产品的图片规划 ，规划每张图的类型。  
 #### 常见图片类型与特性：
 - **大字报图**：突出观点/标题，常用于封面图或引流使用。
 - **参数拉表型**：用于展示多品牌产品的硬件参数、功能维度，横向对比为主，表格结构清晰、信息密度高，常用于封面图或第1张图。
@@ -1334,20 +1338,117 @@ def parse_planting_content(content: str) -> List[Dict[str, str]]:
     if not content:
         return []
     
-    # 使用更灵活的正则表达式匹配图文规划内容
-    # 修复正则表达式以匹配实际的文本格式
-    pattern = r'图片类型：(.*?)\n图文规划：\n(.*?)\n(.*?)\n备注：(.*?)(?=\n\n图片类型：|\Z)'
-    matches = re.findall(pattern, content, re.DOTALL)
-    
     result = []
-    for match in matches:
-        image_info = {
-            "image_type": match[0].strip(),
-            "planning": match[1].strip(),
-            "caption": match[2].strip(),
-            "remark": match[3].strip()
-        }
-        result.append(image_info)
+    
+    # 尝试使用正则表达式匹配图片信息
+    # 匹配新格式: 图片类型后跟图文规划和备注
+    pattern_new = r'图片类型：(.*?)\n图文规划：(.*?)\n备注：(.*?)(?=\n\n图片类型：|\n图片\d+：|\Z)'
+    matches_new = re.findall(pattern_new, content, re.DOTALL)
+    
+    if matches_new:
+        for match in matches_new:
+            remark = match[2].strip()
+            # 清理remark中的图片编号（如"图片9："）
+            remark = re.sub(r'图片\d+：.*', '', remark).strip()
+            
+            image_info = {
+                "image_type": match[0].strip(),
+                "planning": match[1].strip(),
+                "remark": remark,
+                "caption": ""
+            }
+            result.append(image_info)
+    
+    # 如果新格式没有匹配到，尝试匹配包含换行的旧格式
+    if not result:
+        pattern_old = r'图片类型：(.*?)\n图文规划：\n(.*?)\n(.*?)\n备注：(.*?)(?=\n\n图片类型：|\n图片\d+：|\Z)'
+        matches_old = re.findall(pattern_old, content, re.DOTALL)
+        
+        for match in matches_old:
+            remark = match[3].strip()
+            # 清理remark中的图片编号（如"图片9："）
+            remark = re.sub(r'图片\d+：.*', '', remark).strip()
+            
+            image_info = {
+                "image_type": match[0].strip(),
+                "planning": match[1].strip(),
+                "caption": match[2].strip(),
+                "remark": remark
+            }
+            result.append(image_info)
+    
+    # 如果上面两种模式都未匹配到，尝试按图片编号分割内容
+    if not result:
+        # 使用图片编号分割内容 (如 图片1: 图片2: 等)
+        sections = re.split(r'\n(图片\d+：)', content)
+        
+        # 如果分割后的段落数少于2，说明没有找到图片编号，尝试其他方式
+        if len(sections) >= 2:
+            # 处理每个图片部分
+            i = 1
+            while i < len(sections):
+                if sections[i].startswith('图片') and ':' in sections[i]:
+                    # 获取图片信息
+                    image_section = sections[i] + (sections[i+1] if i+1 < len(sections) else "")
+                    
+                    # 提取图片类型
+                    type_match = re.search(r'图片类型：(.*?)\n', image_section)
+                    if type_match:
+                        image_type = type_match.group(1).strip()
+                        
+                        # 提取图文规划
+                        planning_match = re.search(r'图文规划：(.*?)(?:\n备注：|\Z)', image_section, re.DOTALL)
+                        planning = planning_match.group(1).strip() if planning_match else ""
+                        
+                        # 提取备注
+                        remark_match = re.search(r'备注：(.*?)(?=\n图片\d+：|\Z)', image_section, re.DOTALL)
+                        remark = remark_match.group(1).strip() if remark_match else ""
+                        
+                        image_info = {
+                            "image_type": image_type,
+                            "planning": planning,
+                            "remark": remark,
+                            "caption": ""
+                        }
+                        result.append(image_info)
+                i += 2
+        else:
+            # 如果没有找到图片编号，尝试使用"图片类型："作为分割点
+            sections = re.split(r'(\n图片类型：)', content)
+            if len(sections) > 1:
+                # 重新组合分割后的内容
+                combined_sections = []
+                for j in range(0, len(sections), 2):
+                    section = sections[j]
+                    if j + 1 < len(sections):
+                        section += sections[j + 1]
+                        if j + 2 < len(sections):
+                            section += sections[j + 2]
+                    combined_sections.append(section)
+                
+                # 处理每个部分
+                for section in combined_sections:
+                    if '图片类型：' in section:
+                        # 提取图片类型
+                        type_match = re.search(r'图片类型：(.*?)\n', section)
+                        if type_match:
+                            image_type = type_match.group(1).strip()
+                            
+                            # 提取图文规划
+                            planning_match = re.search(r'图文规划：(.*?)(?:\n备注：|\Z)', section, re.DOTALL)
+                            planning = planning_match.group(1).strip() if planning_match else ""
+                            
+                            # 提取备注
+                            remark_match = re.search(r'备注：(.*?)(?=\n图片类型：|\Z)', section, re.DOTALL)
+                            remark = remark_match.group(1).strip() if remark_match else ""
+                            
+                            image_info = {
+                                "image_type": image_type,
+                                "planning": planning,
+                                "remark": remark,
+                                "caption": ""
+                            }
+                            result.append(image_info)
     
     return result
 
@@ -1368,17 +1469,36 @@ def parse_planting_captions(content: str) -> Dict[str, Any]:
         "hashtags": []
     }
     
-    # 解析标题部分
+    # 解析标题部分 - 支持多种格式
+    # 新格式 (带**标记)
     title_match = re.search(r'- \*\*标题\*\*：((?:\n\s*- [^\n]+)+)', content)
     if title_match:
         titles_text = title_match.group(1)
         titles = re.findall(r'- ([^\n]+)', titles_text)
         captions_data["titles"] = [title.strip() for title in titles]
+    else:
+        # 旧格式 (不带**标记)
+        title_match = re.search(r'标题：((?:\n\s*- [^\n]+)+)', content)
+        if title_match:
+            titles_text = title_match.group(1)
+            titles = re.findall(r'- ([^\n]+)', titles_text)
+            captions_data["titles"] = [title.strip() for title in titles]
+        else:
+            # 单行标题格式
+            title_matches = re.findall(r'- \*\*标题\*\*：\s*((?:\n\s*\d+\.\s*[^\n]+)+)', content, re.DOTALL)
+            if title_matches:
+                titles = re.findall(r'\d+\.\s*([^\n]+)', title_matches[0])
+                captions_data["titles"] = [title.strip() for title in titles]
     
     # 解析正文部分
-    body_match = re.search(r'- \*\*正文\*\*：(.*?)(?=\n- \*\*标签|\Z)', content, re.DOTALL)
+    body_match = re.search(r'- \*\*正文\*\*：(.*?)(?=\n- \*\*标签|\n标签：|\Z)', content, re.DOTALL)
     if body_match:
         captions_data["body"] = body_match.group(1).strip()
+    else:
+        # 尝试匹配旧格式
+        body_match = re.search(r'正文：(.*?)(?=\n标签：|\Z)', content, re.DOTALL)
+        if body_match:
+            captions_data["body"] = body_match.group(1).strip()
     
     # 解析标签部分
     hashtag_match = re.search(r'- \*\*标签\*\*：(.*?)(?=\Z)', content, re.DOTALL)
@@ -1386,5 +1506,12 @@ def parse_planting_captions(content: str) -> Dict[str, Any]:
         hashtags_text = hashtag_match.group(1).strip()
         hashtags = re.findall(r'#\S+', hashtags_text)
         captions_data["hashtags"] = hashtags
+    else:
+        # 尝试匹配旧格式
+        hashtag_match = re.search(r'标签：(.*?)(?=\Z)', content, re.DOTALL)
+        if hashtag_match:
+            hashtags_text = hashtag_match.group(1).strip()
+            hashtags = re.findall(r'#\S+', hashtags_text)
+            captions_data["hashtags"] = hashtags
     
     return captions_data
