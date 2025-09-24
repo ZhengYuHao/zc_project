@@ -1318,7 +1318,8 @@ XX
             self.logger.error(f"Error generating planting content: {str(e)}")
             return "测评图文规划生成失败"
 
-
+import re
+from typing import List, Dict, Any
 
 
 def parse_planting_content(content: str) -> List[Dict[str, str]]:
@@ -1340,115 +1341,94 @@ def parse_planting_content(content: str) -> List[Dict[str, str]]:
     
     result = []
     
-    # 尝试使用正则表达式匹配图片信息
-    # 匹配新格式: 图片类型后跟图文规划和备注
-    pattern_new = r'图片类型：(.*?)\n图文规划：(.*?)\n备注：(.*?)(?=\n\n图片类型：|\n图片\d+：|\Z)'
-    matches_new = re.findall(pattern_new, content, re.DOTALL)
+    # 使用正则表达式直接匹配所有图片信息
+    # 匹配模式：图片编号 + 图片类型 + 图文规划 + 备注
+    pattern = r'图片\s*\d+：\s*\n图片类型：(.*?)\s*\n图文规划：(.*?)\s*\n排版建议：(.*?)\s*\n备注：(.*?)(?=\n\n图片\s*\d+：|\Z)'
+    matches = re.findall(pattern, content, re.DOTALL)
     
-    if matches_new:
-        for match in matches_new:
-            remark = match[2].strip()
-            # 清理remark中的图片编号（如"图片9："）
-            remark = re.sub(r'图片\d+：.*', '', remark).strip()
+    # 如果匹配到内容，处理每个匹配项
+    if matches:
+        for match in matches:
+            image_type = match[0].strip()
+            # 合并图文规划和排版建议
+            planning = match[1].strip() + "\n排版建议：" + match[2].strip()
+            remark = match[3].strip()
+            
+            # 清理备注中的干扰信息（如包含下一张图片的编号）
+            remark = re.sub(r'图片\s*\d+：.*$', '', remark, flags=re.MULTILINE).strip()
             
             image_info = {
-                "image_type": match[0].strip(),
-                "planning": match[1].strip(),
+                "image_type": image_type,
+                "planning": planning,
+                "remark": remark,
+                "caption": ""
+            }
+            result.append(image_info)
+    else:
+        # 尝试另一种模式，不包含排版建议的单独匹配
+        pattern2 = r'图片\s*\d+：\s*\n图片类型：(.*?)\s*\n图文规划：(.*?)\s*\n备注：(.*?)(?=\n\n图片\s*\d+：|\Z)'
+        matches2 = re.findall(pattern2, content, re.DOTALL)
+        
+        for match in matches2:
+            image_type = match[0].strip()
+            planning = match[1].strip()
+            remark = match[2].strip()
+            
+            # 清理备注中的干扰信息（如包含下一张图片的编号）
+            remark = re.sub(r'图片\s*\d+：.*$', '', remark, flags=re.MULTILINE).strip()
+            
+            image_info = {
+                "image_type": image_type,
+                "planning": planning,
                 "remark": remark,
                 "caption": ""
             }
             result.append(image_info)
     
-    # 如果新格式没有匹配到，尝试匹配包含换行的旧格式
+    # 如果仍然没有结果，尝试手动分割处理
     if not result:
-        pattern_old = r'图片类型：(.*?)\n图文规划：\n(.*?)\n(.*?)\n备注：(.*?)(?=\n\n图片类型：|\n图片\d+：|\Z)'
-        matches_old = re.findall(pattern_old, content, re.DOTALL)
+        # 按"图片X："分割内容
+        sections = re.split(r'(图片\s*\d+：)', content)
         
-        for match in matches_old:
-            remark = match[3].strip()
-            # 清理remark中的图片编号（如"图片9："）
-            remark = re.sub(r'图片\d+：.*', '', remark).strip()
-            
-            image_info = {
-                "image_type": match[0].strip(),
-                "planning": match[1].strip(),
-                "caption": match[2].strip(),
-                "remark": remark
-            }
-            result.append(image_info)
-    
-    # 如果上面两种模式都未匹配到，尝试按图片编号分割内容
-    if not result:
-        # 使用图片编号分割内容 (如 图片1: 图片2: 等)
-        sections = re.split(r'\n(图片\d+：)', content)
-        
-        # 如果分割后的段落数少于2，说明没有找到图片编号，尝试其他方式
-        if len(sections) >= 2:
-            # 处理每个图片部分
-            i = 1
-            while i < len(sections):
-                if sections[i].startswith('图片') and ':' in sections[i]:
-                    # 获取图片信息
-                    image_section = sections[i] + (sections[i+1] if i+1 < len(sections) else "")
-                    
-                    # 提取图片类型
-                    type_match = re.search(r'图片类型：(.*?)\n', image_section)
-                    if type_match:
-                        image_type = type_match.group(1).strip()
-                        
-                        # 提取图文规划
-                        planning_match = re.search(r'图文规划：(.*?)(?:\n备注：|\Z)', image_section, re.DOTALL)
-                        planning = planning_match.group(1).strip() if planning_match else ""
-                        
-                        # 提取备注
-                        remark_match = re.search(r'备注：(.*?)(?=\n图片\d+：|\Z)', image_section, re.DOTALL)
-                        remark = remark_match.group(1).strip() if remark_match else ""
-                        
-                        image_info = {
-                            "image_type": image_type,
-                            "planning": planning,
-                            "remark": remark,
-                            "caption": ""
-                        }
-                        result.append(image_info)
-                i += 2
-        else:
-            # 如果没有找到图片编号，尝试使用"图片类型："作为分割点
-            sections = re.split(r'(\n图片类型：)', content)
-            if len(sections) > 1:
-                # 重新组合分割后的内容
-                combined_sections = []
-                for j in range(0, len(sections), 2):
-                    section = sections[j]
-                    if j + 1 < len(sections):
-                        section += sections[j + 1]
-                        if j + 2 < len(sections):
-                            section += sections[j + 2]
-                    combined_sections.append(section)
+        # 处理每个部分（跳过第一个空的部分）
+        i = 1
+        while i < len(sections):
+            if sections[i].startswith('图片') and '：' in sections[i]:
+                # 构建完整的图片部分
+                image_section = sections[i]
+                if i + 1 < len(sections):
+                    image_section += sections[i + 1]
                 
-                # 处理每个部分
-                for section in combined_sections:
-                    if '图片类型：' in section:
-                        # 提取图片类型
-                        type_match = re.search(r'图片类型：(.*?)\n', section)
-                        if type_match:
-                            image_type = type_match.group(1).strip()
-                            
-                            # 提取图文规划
-                            planning_match = re.search(r'图文规划：(.*?)(?:\n备注：|\Z)', section, re.DOTALL)
-                            planning = planning_match.group(1).strip() if planning_match else ""
-                            
-                            # 提取备注
-                            remark_match = re.search(r'备注：(.*?)(?=\n图片类型：|\Z)', section, re.DOTALL)
-                            remark = remark_match.group(1).strip() if remark_match else ""
-                            
-                            image_info = {
-                                "image_type": image_type,
-                                "planning": planning,
-                                "remark": remark,
-                                "caption": ""
-                            }
-                            result.append(image_info)
+                # 提取图片类型
+                type_match = re.search(r'图片类型：(.*?)(?:\n|$)', image_section)
+                if type_match:
+                    image_type = type_match.group(1).strip()
+                    
+                    # 提取图文规划（包括排版建议）
+                    planning = ""
+                    planning_match = re.search(r'图文规划：(.*?)(?=排版建议：|备注：)', image_section, re.DOTALL)
+                    layout_match = re.search(r'排版建议：(.*?)(?=备注：)', image_section, re.DOTALL)
+                    
+                    if planning_match and layout_match:
+                        planning = planning_match.group(1).strip() + "\n排版建议：" + layout_match.group(1).strip()
+                    elif planning_match:
+                        planning = planning_match.group(1).strip()
+                    
+                    # 提取备注
+                    remark_match = re.search(r'备注：(.*?)(?=\n\n图片\s*\d+：|\Z)', image_section, re.DOTALL)
+                    remark = remark_match.group(1).strip() if remark_match else ""
+                    
+                    # 清理备注中的干扰信息
+                    remark = re.sub(r'图片\s*\d+：.*$', '', remark, flags=re.MULTILINE).strip()
+                    
+                    image_info = {
+                        "image_type": image_type,
+                        "planning": planning,
+                        "remark": remark,
+                        "caption": ""
+                    }
+                    result.append(image_info)
+            i += 2
     
     return result
 
