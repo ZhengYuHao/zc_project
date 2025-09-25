@@ -27,7 +27,7 @@ __pycache__
 *.swo
 
 # 忽略.env文件
-.env
+agents_system/.env
 
 # 忽略测试相关文件
 tests/

@@ -56,7 +56,7 @@ npm-debug.log*
 ### 依赖管理文件（根据语言调整） ###
 # Python虚拟环境
 venv/
-.env/
+agents_system/.env/
 .python-version
 
 # Ruby
@@ -70,7 +70,7 @@ vendor/
 *.cache
 
 ### 环境变量 & 敏感文件 ###
-.env
+agents_system/.env
 .secret
 config/local.properties  # 本地配置文件
 

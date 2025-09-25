@@ -13,7 +13,10 @@ import os
 import asyncio
 from typing import Dict, List, Optional, Any
 from datetime import datetime
+
+from dotenv import load_dotenv
 from pydantic import BaseModel
+from sapperrag.GraphRAG import ask_knowledge_graph
 
 # 添加项目根目录到Python路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -469,11 +472,15 @@ class WechatConversationAgent:
                 if not qa_prompt:
                     logger.warning(f"QA prompt not found for user {user.user_id}, falling back to old model")
                     return await self._old_chat_model(message, user)
-                
+                retrieve=ask_knowledge_graph(query=message.message)
+                print("----------------------------------------------")
+                print("retrieve", retrieve)
+                print("----------------------------------------------")
                 qa_prompt_text = qa_prompt.prompt_word.format(
                     production=user.project_name,
                     conversation=history_text,
-                    input=message.message
+                    input=message.message,
+                    retrieve=retrieve
                 )
                 
                 logger.info(f"Calling QA model for user {user.user_id}")

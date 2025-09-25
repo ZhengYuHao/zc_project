@@ -13,4 +13,4 @@ services:
       - FEISHU_APP_SECRET=${FEISHU_APP_SECRET}
       - DOUBAO_MODEL_NAME=${DOUBAO_MODEL_NAME}
     env_file:
-      - .env
+      - agents_system/.env
