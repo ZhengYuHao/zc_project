@@ -8,10 +8,10 @@ import asyncio
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.base_agent import BaseAgent
-from models.doubao import get_doubao_model
 from models.feishu import get_feishu_client, DocumentVersionError
 from utils.ac_automaton import ACAutomaton
 from core.request_context import get_request_id
+from models.model_manager import ModelManager
 
 
 class TextReviewRequest(BaseModel):
@@ -45,9 +45,8 @@ class FeishuMessageRequest(BaseModel):
 class TextReviewerAgent(BaseAgent):
     """文本审稿智能体，用于处理文本中的错别字和语言逻辑问题"""
     
-    def __init__(self):
+    def __init__(self, model_manager: ModelManager):
         super().__init__("text_reviewer")
-        self.llm = get_doubao_model()
         self.feishu_client = get_feishu_client()
         # 添加文档处理锁，防止同一文档并发处理
         self.document_locks = {}
@@ -55,6 +54,9 @@ class TextReviewerAgent(BaseAgent):
         self.router.post("/review", response_model=TextReviewResponse)(self.review_text)
         self.router.post("/feishu/document", response_model=dict)(self.process_feishu_document)
         self.router.post("/feishu/message", response_model=dict)(self.process_feishu_message)
+        
+        # 模型管理器
+        self.model_manager = model_manager
         
         # 初始化AC自动机并加载违禁词
         self._init_prohibited_words()
@@ -145,8 +147,8 @@ class TextReviewerAgent(BaseAgent):
         if request.style:
             prompt += f"\n5. 文本风格要求：{request.style}"
         
-        # 调用大模型
-        corrected_text = await self.llm.generate_text(prompt)
+        # 调用大模型（通过模型管理器）
+        corrected_text = await self.model_manager.call_model("text_review", prompt)
         
         # 构造响应
         response = TextReviewResponse(
@@ -604,8 +606,8 @@ class TextReviewerAgent(BaseAgent):
 {table_text}
 """
                         self.logger.info(f"调用大模型处理整个表格{table_text}")
-                        # 调用大模型处理整个表格
-                        corrected_table_text = await self.llm.generate_text(prompt)
+                        # 调用大模型处理整个表格（通过模型管理器）
+                        corrected_table_text = await self.model_manager.call_model("text_review", prompt)
                         self.logger.info(f"调用大模型处理整个表格后{corrected_table_text}")
                         # 解析处理后的表格文本
                         corrected_lines = corrected_table_text.strip().split('\n')

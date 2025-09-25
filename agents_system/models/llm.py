@@ -38,6 +38,86 @@ class QwenModel(BaseModel):
         }
         logger.info(f"Initialized QwenModel with model: {self.model_name}")
     
+    async def _call_api(self, prompt: str, **kwargs) -> Dict[str, Any]:
+        """
+        调用Qwen API的核心方法，包含重试机制
+        
+        Args:
+            prompt: 输入提示
+            **kwargs: 其他参数
+            
+        Returns:
+            API响应结果
+            
+        Raises:
+            Exception: 当API调用失败时抛出异常
+        """
+        url = f"{self.api_base}/services/aigc/text-generation/generation"
+        logger.info(f"Calling Qwen model: {self.model_name}")
+        logger.debug(f"API URL: {url}")
+        logger.debug(f"Request headers: {self.headers}")
+        
+        # 构建请求参数 - 使用messages格式而不是prompt
+        payload = {
+            "model": self.model_name,
+            "input": {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ]
+            },
+            "parameters": {
+                "max_tokens": kwargs.get("max_tokens", 8000),
+                "temperature": kwargs.get("temperature", 0.8),
+                **{k: v for k, v in kwargs.items() if k not in ['max_tokens', 'temperature']}
+            }
+        }
+        
+        logger.debug(f"Request payload: {json.dumps(payload, ensure_ascii=False, indent=2)}")
+        
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Sending request to Qwen API (attempt {attempt + 1}/{max_retries})")
+                response = await self.client.post(
+                    url,
+                    headers=self.headers,
+                    json=payload,
+                    timeout=httpx.Timeout(30.0)
+                )
+                
+                logger.info(f"Received response from Qwen API with status code: {response.status_code}")
+                logger.debug(f"Response headers: {dict(response.headers)}")
+                
+                response.raise_for_status()
+                result = response.json()
+                logger.debug(f"Response JSON: {json.dumps(result, ensure_ascii=False, indent=2)}")
+                
+                return result
+                
+            except httpx.TimeoutException as e:
+                logger.warning(f"Timeout on attempt {attempt + 1}: {str(e)}")
+                if attempt == max_retries - 1:
+                    logger.error(f"Max retries reached. Last error: {str(e)}")
+                    raise Exception(f"请求通义千问API超时，已重试{max_retries}次: {str(e)}")
+                await asyncio.sleep(2 ** attempt)  # 指数退避
+                
+            except httpx.HTTPStatusError as e:
+                logger.error(f"HTTP error {e.response.status_code}: {e.response.text}")
+                if attempt == max_retries - 1:
+                    raise Exception(f"通义千问API返回HTTP错误 {e.response.status_code}: {e.response.text}")
+                await asyncio.sleep(2 ** attempt)  # 指数退避
+                
+            except Exception as e:
+                logger.error(f"Error calling Qwen API: {str(e)}")
+                if attempt == max_retries - 1:
+                    raise
+                await asyncio.sleep(2 ** attempt)  # 指数退避
+        
+        raise Exception("Failed to call Qwen API after all retries")
+
     async def generate_text(self, prompt: str, **kwargs) -> str:
         """
         生成文本
@@ -49,32 +129,23 @@ class QwenModel(BaseModel):
         Returns:
             生成的文本
         """
-        url = f"{self.api_base}/services/aigc/text-generation/generation"
-        
-        payload = {
-            "model": self.model_name,
-            "input": {
-                "prompt": prompt
-            },
-            "parameters": {
-                "max_tokens": kwargs.get("max_tokens", 8000),
-                "temperature": kwargs.get("temperature", 0.8),
-                **kwargs
-            }
-        }
+        logger.info(f"Generating text with Qwen model: {self.model_name}")
+        logger.debug(f"Prompt: {prompt}")
         
         try:
-            logger.info(f"Calling Qwen model with prompt: {prompt}...")
-            response = await self.client.post(url, headers=self.headers, json=payload, timeout=30.0)
-            response.raise_for_status()
+            result = await self._call_api(prompt, **kwargs)
             
-            result = response.json()
-            generated_text = result["output"]["text"]
-            logger.info(f"Successfully generated text with Qwen model{result}...")
-            
-            return generated_text
+            if "output" in result and "text" in result["output"]:
+                content = result["output"]["text"]
+                logger.info(f"Successfully generated text with Qwen model, length: {len(content)}")
+                logger.debug(f"Generated text: {content}")
+                return content
+            else:
+                logger.error(f"Unexpected response format: {result}")
+                raise Exception(f"Unexpected response format from Qwen API: {result}")
+                
         except Exception as e:
-            logger.error(f"Error calling Qwen model: {str(e)}")
+            logger.error(f"Error generating text with Qwen model: {str(e)}")
             raise
     
     async def generate_text_stream(self, prompt: str, **kwargs) -> AsyncGenerator[str, None]:
@@ -93,13 +164,18 @@ class QwenModel(BaseModel):
         payload = {
             "model": self.model_name,
             "input": {
-                "prompt": prompt
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ]
             },
             "parameters": {
-                "max_tokens": kwargs.get("max_tokens", 1024),
+                "max_tokens": kwargs.get("max_tokens", 8000),
                 "temperature": kwargs.get("temperature", 0.8),
                 "stream": True,
-                **kwargs
+                **{k: v for k, v in kwargs.items() if k not in ['max_tokens', 'temperature']}
             }
         }
         
@@ -121,8 +197,8 @@ class QwenModel(BaseModel):
             logger.error(f"Error calling Qwen model stream: {str(e)}")
             raise
     
-    async def close(self):
-        """关闭HTTP客户端"""
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """异步上下文管理器退出"""
         await self.client.aclose()
 
 

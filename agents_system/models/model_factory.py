@@ -2,7 +2,7 @@ from typing import Dict, Any, Optional, Type
 from .base_model import BaseModel
 from .doubao import DoubaoModel
 from .deepseek import DeepSeekModel
-from .llm import QwenModel
+from .qwen import QwenModel
 
 
 class ModelFactory:

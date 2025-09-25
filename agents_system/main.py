@@ -55,7 +55,7 @@ async def register_agents():
         
         # 动态导入并注册文本审核智能体
         from agents.text_reviewer import TextReviewerAgent
-        text_reviewer = TextReviewerAgent()
+        text_reviewer = TextReviewerAgent(model_manager)
         # 保持原有路由路径，不添加前缀
         app.include_router(text_reviewer.router)
         logger.info("Registered TextReviewerAgent")
