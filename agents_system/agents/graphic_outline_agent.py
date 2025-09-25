@@ -15,7 +15,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.base_agent import BaseAgent
 from models.feishu import get_feishu_client, DocumentVersionError
-from models.doubao import call_doubao
+from models.model_manager import ModelManager
 from config.settings import settings
 from utils.logger import get_logger
 from utils.cell_filler import CellFiller
@@ -103,7 +103,8 @@ class ProcessRequestResponse(BaseModel):
 class GraphicOutlineAgent(BaseAgent):
     """图文大纲生成智能体，用于生成图文内容的大纲并创建飞书电子表格"""
     
-    def __init__(self):
+    def __init__(self, model_manager: ModelManager):
+        # 使用graphic_outline作为名称，保持与原有路由一致
         super().__init__("graphic_outline")
         self.feishu_client = get_feishu_client()
         self.logger = get_logger("agent.graphic_outline")
@@ -116,12 +117,15 @@ class GraphicOutlineAgent(BaseAgent):
         self.template_spreadsheet_token = settings.GRAPHIC_OUTLINE_TEMPLATE_SPREADSHEET_TOKEN
         self.template_folder_token = settings.GRAPHIC_OUTLINE_TEMPLATE_FOLDER_TOKEN
         
+        # 模型管理器
+        self.model_manager = model_manager
+        
         # 加载提示词
         self._load_prompts()
         
-        # 添加特定路由
-        self.router.post("/feishu/sheet", response_model=dict)(self.create_feishu_sheet)
+        # 添加特定路由，保持与原有路由一致
         self.router.post("/process-request", response_model=ProcessRequestResponse)(self.process_request_api)
+        self.router.post("/feishu/sheet", response_model=dict)(self.create_feishu_sheet)
         
     def _load_prompts(self):
         """加载提示词"""
@@ -996,8 +1000,8 @@ class GraphicOutlineAgent(BaseAgent):
             # 使用用户提示词或系统提示词
             prompt = user_prompt if user_prompt else system_prompt
             
-            from models.doubao import call_doubao
-            captions_content = await call_doubao(prompt)
+            # 调用模型
+            captions_content = await self.model_manager.call_model("_generate_planting_captions", prompt)
             return captions_content
             
         except Exception as e:
@@ -1078,8 +1082,8 @@ class GraphicOutlineAgent(BaseAgent):
             # 使用用户提示词或系统提示词
             prompt = user_prompt if user_prompt else system_prompt
             
-            from models.doubao import call_doubao
-            captions_content = await call_doubao(prompt)
+            # 调用模型
+            captions_content = await self.model_manager.call_model("_generate_planting_captions_cp", prompt)
             return captions_content
             
         except Exception as e:
@@ -1176,9 +1180,12 @@ class GraphicOutlineAgent(BaseAgent):
             # 使用用户提示词或系统提示词
             prompt = user_prompt if user_prompt else system_prompt
             
-            from models.doubao import call_doubao
             # 调用模型时添加response_format参数，要求JSON格式输出
-            planting_content = await call_doubao(prompt, response_format={"type": "json_object"})
+            planting_content = await self.model_manager.call_model(
+                "_generate_planting_content", 
+                prompt, 
+                response_format={"type": "json_object"}
+            )
             return planting_content
             
         except Exception as e:
@@ -1272,9 +1279,12 @@ class GraphicOutlineAgent(BaseAgent):
             # 使用用户提示词或系统提示词
             prompt = user_prompt if user_prompt else system_prompt
             
-            from models.doubao import call_doubao
             # 调用模型时添加response_format参数，要求JSON格式输出
-            planting_content = await call_doubao(prompt, response_format={"type": "json_object"})
+            planting_content = await self.model_manager.call_model(
+                "_generate_planting_content_cp", 
+                prompt, 
+                response_format={"type": "json_object"}
+            )
             return planting_content
             
         except Exception as e:

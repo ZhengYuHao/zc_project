@@ -9,16 +9,26 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.settings import settings
 from utils.logger import get_logger
+from .base_model import BaseModel
 
 logger = get_logger(__name__)
 
 
-class DoubaoModel:
+class DoubaoModel(BaseModel):
     """豆包大模型调用接口"""
     
-    def __init__(self):
-        self.api_key = settings.DOUBAO_API_KEY
-        self.model_name = settings.DOUBAO_MODEL_NAME
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        # 如果没有提供配置，则使用默认配置
+        if config is None:
+            config = {
+                "api_key": settings.DOUBAO_API_KEY,
+                "model_name": settings.DOUBAO_MODEL_NAME or "default-model"
+            }
+        
+        super().__init__(config)
+        
+        self.api_key = config.get("api_key") or settings.DOUBAO_API_KEY
+        self.model_name = config.get("model_name") or settings.DOUBAO_MODEL_NAME or "default-model"
         self.client = httpx.AsyncClient()
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -115,11 +125,11 @@ class DoubaoModel:
 doubao_model: Optional[DoubaoModel] = None
 
 
-def get_doubao_model() -> DoubaoModel:
+def get_doubao_model(config: Optional[Dict[str, Any]] = None) -> DoubaoModel:
     """获取豆包模型实例"""
     global doubao_model
     if doubao_model is None:
-        doubao_model = DoubaoModel()
+        doubao_model = DoubaoModel(config)
     return doubao_model
 
 

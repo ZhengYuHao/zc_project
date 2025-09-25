@@ -1,0 +1,28 @@
+{
+  "models": {
+    "default": {
+      "type": "doubao"
+    },
+    "graphic_outline": {
+      "type": "doubao"
+    },
+    "text_review": {
+      "type": "doubao"
+    },
+    "planting_content": {
+      "type": "doubao"
+    },
+    "planting_captions": {
+      "type": "doubao"
+    }
+  },
+  "task_model_mapping": {
+    "graphic_outline": "graphic_outline",
+    "text_review": "text_review",
+    "_generate_planting_content": "planting_content",
+    "_generate_planting_captions": "planting_captions",
+    "_generate_planting_content_cp": "planting_content",
+    "_generate_planting_captions_cp": "planting_captions",
+    "default": "default"
+  }
+}
