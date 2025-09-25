@@ -1,5 +1,6 @@
 import sys
 import os
+import json
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import asyncio
@@ -115,10 +116,23 @@ class GraphicOutlineAgent(BaseAgent):
         self.template_spreadsheet_token = settings.GRAPHIC_OUTLINE_TEMPLATE_SPREADSHEET_TOKEN
         self.template_folder_token = settings.GRAPHIC_OUTLINE_TEMPLATE_FOLDER_TOKEN
         
+        # 加载提示词
+        self._load_prompts()
+        
         # 添加特定路由
         self.router.post("/feishu/sheet", response_model=dict)(self.create_feishu_sheet)
         self.router.post("/process-request", response_model=ProcessRequestResponse)(self.process_request_api)
         
+    def _load_prompts(self):
+        """加载提示词"""
+        prompts_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'prompts', 'prompts.json')
+        try:
+            with open(prompts_path, 'r', encoding='utf-8') as f:
+                self.prompts = json.load(f)
+        except Exception as e:
+            self.logger.error(f"Failed to load prompts from {prompts_path}: {str(e)}")
+            self.prompts = {}
+    
     async def process(self, input_data: GraphicOutlineRequest) -> GraphicOutlineResponse:
         """
         处理图文大纲生成请求
@@ -129,7 +143,22 @@ class GraphicOutlineAgent(BaseAgent):
         Returns:
             图文大纲生成结果
         """
-        return await self.generate_outline(input_data)
+        result = await self.process_request(input_data.dict())
+        if result.get("status") == "success":
+            return GraphicOutlineResponse(
+                outline_data=result.get("processed_data", {}),
+                document_id=result.get("spreadsheet", {}).get("sheet_id", ""),
+                spreadsheet_token=result.get("spreadsheet", {}).get("spreadsheet_token", ""),
+                request_id=result.get("request_id")
+            )
+        else:
+            # 在出错情况下创建一个空的响应
+            return GraphicOutlineResponse(
+                outline_data={},
+                document_id="",
+                spreadsheet_token="",
+                request_id=result.get("request_id")
+            )
     
     async def process_request_api(self, request: ProcessRequestInput) -> ProcessRequestResponse:
         """
@@ -202,7 +231,7 @@ class GraphicOutlineAgent(BaseAgent):
             # 汇总任务结果并进行下一步处理
             processed_data = await self._aggregate_and_process(task_results, request)
             self.logger.info(f"Processing graphic outline request{processed_data}")
-            if processed_data.get("note_style") == "种草":
+            if processed_data.get("direction") == "种草":
                 # 调用豆包大模型生成种草图文规划
                 planting_content = await self._generate_planting_content(processed_data)
                 processed_data["planting_content"] = planting_content
@@ -587,99 +616,6 @@ class GraphicOutlineAgent(BaseAgent):
             # 即使格式设置失败，也不中断数据填充流程
             return False
     
-    def _cell_ref_to_row_index(self, cell_ref: str) -> int:
-        """
-        将单元格引用（如A1）转换为行索引（从0开始）
-        
-        Args:
-            cell_ref: 单元格引用，如"A1"
-            
-        Returns:
-            行索引
-        """
-        # 提取行号部分（数字）
-        row_part = ''.join(filter(str.isdigit, cell_ref))
-        return int(row_part) - 1  # 转换为0基索引
-    
-    def _cell_ref_to_col_index(self, cell_ref: str) -> int:
-        """
-        将单元格引用（如A1）转换为列索引（从0开始）
-        
-        Args:
-            cell_ref: 单元格引用，如"A1"
-            
-        Returns:
-            列索引
-        """
-        # 提取列号部分（字母）
-        col_part = ''.join(filter(str.isalpha, cell_ref.upper()))
-        
-        # 转换列为数字索引
-        col_index = 0
-        for char in col_part:
-            col_index = col_index * 26 + (ord(char) - ord('A'))
-        return col_index
-    
-    async def _fill_custom_data(self, spreadsheet_token: str, sheet_id: str, custom_fill_data: Dict[str, Any]) -> bool:
-        """
-        填充自定义数据到电子表格
-        
-        Args:
-            spreadsheet_token: 电子表格token
-            sheet_id: 工作表ID
-            custom_fill_data: 自定义填充数据，格式：
-                {
-                    "cells": {           # 指定单元格填充
-                        "A1": "A1값",
-                        "B2": "B2값"
-                    }
-                }
-                
-        Returns:
-            是否填充成功
-        """
-        self.logger.info(f"Filling custom data to spreadsheet: {spreadsheet_token}")
-        
-        try:
-            # 获取飞书访问令牌
-            tenant_token = await self.feishu_client.get_tenant_access_token()
-            
-            headers = {
-                "Authorization": f"Bearer {tenant_token}",
-                "Content-Type": "application/json; charset=utf-8"
-            }
-            
-            # 飞书电子表格操作API endpoint
-            write_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values"
-            
-            # 按单元格填充
-            value_ranges = []
-            for cell_ref, value in custom_fill_data["cells"].items():
-                value_ranges.append({
-                    "range": f"{sheet_id}!{cell_ref}:{cell_ref}",
-                    "values": [[value]]
-                })
-            
-            write_payload = {
-                "valueRanges": value_ranges
-            }
-            
-            # 发送请求
-            async with httpx.AsyncClient() as client:
-                response = await client.put(write_url, headers=headers, json=write_payload, timeout=self.timeout)
-                response.raise_for_status()
-                result = response.json()
-                
-                if result.get("code") != 0:
-                    raise Exception(f"Failed to write custom data to spreadsheet: {result}")
-            
-            self.logger.info(f"Successfully filled custom data to spreadsheet: {spreadsheet_token}")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error filling custom data to spreadsheet {spreadsheet_token}: {str(e)}")
-            return False
-
     async def create_feishu_sheet(self, request: Dict[str, Any]) -> dict:
         """
         创建飞书电子表格
@@ -939,29 +875,48 @@ class GraphicOutlineAgent(BaseAgent):
                 blogger_style = sections.get("blogger_style", "")
             
             # 构建系统提示词
+            prompt_template = self.prompts.get("graphic_outline", {}).get("planting_captions", {})
+            
+            # 构建输入描述
+            input_description = prompt_template.get("input_description", "").format(
+                notice=notice,
+                outline_direction=outline_direction,
+                ProductHighlights=ProductHighlights,
+                blogger_style=blogger_style,
+                planting_content=planting_content,
+                requirements=requirements
+            )
+            
+            # 构建技能1描述
+            skill_1 = prompt_template.get("skills", {}).get("skill_1", "")
+            
+            # 构建全局要求
+            global_requirements = prompt_template.get("global_requirements", "")
+            
+            # 构建禁止用语
+            forbidden_phrases = prompt_template.get("forbidden_phrases", "")
+            
+            # 构建输出格式和内容
+            output_format_and_content = prompt_template.get("output_format_and_content", "")
+            
+            # 构建限制
+            restrictions = prompt_template.get("restrictions", "")
+            
             system_prompt = f"""## 角色
-你是一个专业的小红书与抖音笔记的配文创作者。擅长根据图文规划、创作要求、产品卖点、达人风格创作配文。配文：笔记的文案
+{prompt_template.get("role", "")}
 
 ## 输入
-【注意事项】：{notice}
-【大纲方向建议】：{outline_direction}
-【卖点信息】：{ProductHighlights}
-【达人风格】：{blogger_style}
-【图片规划】：{planting_content}
-【创作建议】：{requirements}
+{input_description}
 
 ## 全局要求
-使用真实自然的第一人称叙述风格，语言生动亲切，体现真实使用感受
-1. **引入不生硬**：不说“今天我要推荐XX”，而是“我在做XX时发现了XX”。
-2. **种草不夸张**：用“我觉得”“试了下”“居然”等词弱化广告感，重点描述“场景里的体验”（比如“挂在推车上不晃”比“质量好”更具体）。
-3. **收尾不强迫**：引导像“顺手分享”，甚至可以不分享，比如“可以试试”，而非“赶紧买”。
+{global_requirements}
 
 ## 禁止话术
-- 不使用 “家人们”“宝子”“铁子” 等特定称呼
+{forbidden_phrases}
 
 ### 技能
 ## 技能1
-1. 根据【大纲方向建议】选择一个合适的结构作为配文创作的框架，再结合【大纲方向建议】、【创作要求】、【注意事项】、【卖点信息】生成创作配文的大纲。（注意事项为最高优先级，大纲严禁违背注意事项的内容）（【大纲方向建议】、【创作要求】都属于创作的方向，但以【大纲方向建议】为第一优先级）
+{skill_1}
 # 爆文笔记结构
 1.PREP结构
 - 框架公式：观点-理由-案例-观点
@@ -1032,13 +987,10 @@ class GraphicOutlineAgent(BaseAgent):
 * 配文结构：标题、正文、收尾。
 
 ## 强制输出格式和内容
-**一、笔记配文**
-- **标题**：生成5个富有创意且吸引力的标题，巧妙融入emoji表情，提升趣味性和点击率，**字数控制在20字以内**。
-- **正文**：严格按照指定的创作结构撰写，正文内容需基于真实数据和专业分析，风格自然可信。避免镜头语言和剧本式表述。不含价格信息或门店推荐（除非【注意事项】提及）。巧妙融入少量emoji表情。**全文控制在800字以内**。
-- **标签**：输出【卖点信息】中要求的必带话题，同时输出3-4个符合规范的标签，包含主话题、精准话题、流量话题。
+{output_format_and_content}
 
 ## 限制
-- 严禁输出笔记配文之外的其它内容
+{restrictions}
 """
             
             # 使用用户提示词或系统提示词
@@ -1081,35 +1033,46 @@ class GraphicOutlineAgent(BaseAgent):
                 blogger_style = sections.get("blogger_style", "")
             
             # 构建系统提示词
+            prompt_template = self.prompts.get("graphic_outline", {}).get("planting_captions_cp", {})
+            
+            # 构建输入描述
+            input_description = prompt_template.get("input_description", "").format(
+                outline_direction=outline_direction,
+                ProductHighlights=ProductHighlights,
+                planting_content=planting_content,
+                notice=notice,
+                requirements=requirements
+            )
+            
+            # 构建全局要求
+            global_requirements = prompt_template.get("global_requirements", "")
+            
+            # 构建技能描述
+            skill_1 = prompt_template.get("skills", {}).get("skill_1", "")
+            
+            # 构建输出格式
+            output_format = prompt_template.get("output_format", "")
+            
+            # 构建限制
+            restrictions = "\n".join(prompt_template.get("restrictions", []))
+            
             system_prompt = f"""## 角色
-你是一名真实用户视角的专业测评博主。擅长以第一人称写作，创作自然真实且极具吸引力与公信力的测评笔记，能够用Z世代语言解析产品内核，符合小红书或抖音等平台的内容风格。
+{prompt_template.get("role", "")}
 
 ## 输入
-【大纲方向建议】：{outline_direction}
-【卖点信息】：{ProductHighlights}
-【图片规划】：{planting_content}
-【注意事项】：{notice}
-【创作要求】：{requirements}
+{input_description}
 
 ## 全局要求
-- 使用真实自然的第一人称叙述风格，语言生动亲切，体现真实使用感受
+{global_requirements}
 
 ## 技能
-1. 理解【图片规划】、【注意事项】、【大纲方向建议】，【创作要求】、【卖点信息】，按照图片规划的逻辑和内容生成配文，同时要遵从足以事项，符合内容方向。必须要有产品的介绍，产品在日常使用中的实际体验和效果，卖点（自然的融入到正文中，严禁直接搬抄产品卖点的内容）。（【大纲方向建议】、【创作要求】都属于创作的方向，但以【大纲方向建议】为第一优先级）
-配文结构：标题、正文、收尾。
-标题：引入部分，要引起共鸣
-收尾：关联主题，让更多人使用产品
+{skill_1}
 
 ## 强制输出格式要求
-**一、笔记配文**
-- **标题**：生成5个富有创意且吸引力的标题，巧妙融入emoji表情，提升趣味性和点击率，**字数控制在20字以内**。
-- **正文**：严格按照指定的创作结构撰写，正文内容需基于真实数据和专业分析，风格自然可信。段落简短（3-5句），避免镜头语言和剧本式表述。不含价格信息或门店推荐（除非【注意事项】提及）。**全文控制在800字以内**。
-- **标签**：输出【产品信息】中要求的必带话题，同时输出3-4个符合规范的标签，包含主话题、精准话题、流量话题。
+{output_format}
 
 ## 限制
-1. 内容必须围绕产品测评和避坑选购指南，避免偏离主题。
-2. 保持竞品对比客观中立，侧重自家优势但不过度贬低其他产品。
-3. 文中所有数据来源需保证真实性，提高公信力（引用可在内容中以````等符号隐晦表示）
+{restrictions}
 """
             
             # 使用用户提示词或系统提示词
@@ -1152,123 +1115,62 @@ class GraphicOutlineAgent(BaseAgent):
                 
             
             # 构建系统提示词
+            prompt_template = self.prompts.get("graphic_outline", {}).get("planting_content", {})
+            
+            # 构建输入描述
+            input_description = prompt_template.get("input_description", "").format(
+                outline_direction=outline_direction,
+                ProductHighlights=ProductHighlights,
+                notice=notice,
+                picture_number=picture_number,
+                blogger_style=blogger_style,
+                requirements=requirements,
+                product_name=product_name
+            )
+            
+            # 构建技能描述
+            skill_1 = prompt_template.get("skills", {}).get("skill_1", "")
+            skill_2 = prompt_template.get("skills", {}).get("skill_2", "")
+            skill_3 = prompt_template.get("skills", {}).get("skill_3", "")
+            skill_4 = prompt_template.get("skills", {}).get("skill_4", "")
+            skill_5 = prompt_template.get("skills", {}).get("skill_5", "")
+            
+            # 构建输出格式
+            output_format = prompt_template.get("output_format", "").format(picture_number=picture_number)
+            
+            # 构建限制
+            restrictions = "\n".join(prompt_template.get("restrictions", []))
+            
             system_prompt = f"""## 角色
-你是一位专业的小红书种草图文规划师，擅长为 产品创作极具吸引力的种草类图文笔记。注意，你的任务规划出高互动率的爆款内容的图文规划，而不是视频分镜脚本。
+{prompt_template.get("role", "")}
 
 ## 输入
-【大纲方向建议】：{outline_direction}
-【卖点信息】：{ProductHighlights}
-【注意事项】：{notice}
-【图片数量】：{picture_number}
-【达人风格】：{blogger_style}
-【创作要求】：{requirements}
-【产品名称】：{product_name}
+{input_description}
 
 ## 产品相关信息
 - 产品名称：{product_name}
 
 ### 技能
 ## 技能1：
-根据【产品相关信息】、【达人风格】，确定以下拍摄场景、拍摄中出现的人物。
-遵循以下要求：
-场景：符合产品使用的主场景（仅一个）。
-人物：确定展示产品的人物（一定要符合达人的人设和条件以及适配产品）
+{skill_1}
 
 ## 技能2：
-仔细分析【大纲方向建议】、【创作要求】和【注意事项】的内容，提取出与拍摄产品图片有关的信息，作为图文规划的**创作方向**。（【大纲方向建议】、【创作要求】都属于创作的方向，但以【大纲方向建议】为第一优先级）
+{skill_2}
 
 ## 技能3：生成图片规划内容
-以展示产品为目的，写出{picture_number}张种草类产品图片的静态拍摄规划。按照以下图片类型及其功能，给出规划内容。同时，所有图片规划需遵循图片规划原则，图文规划**创作方向**->（技能2的结果），
-常见图片类型及其特点：
-* 封面图：构图吸睛、情绪明确，首图抢眼吸引点击，一般为产品特写、产品使用场景图、产品使用氛围图等等几类
-* 人物图：达人出镜，营造亲和信任感
-* 场景图：还原真实使用情境，增强生活感
-* 特写图：展示材质、功能细节等局部亮点
-* 产品图：从各个角度展示产品，让用户快速了解产品
-* 效果图：展示智能产品的App效果截图（可选）
-# 图片规划原则
-* 场景描述要简单，重点在于展示产品（不需要细节到地毯什么颜色，墙什么颜色等等）
-* 按照确定好的拍摄场景规划所有图片的场景，避免频繁切换场景。
-* 产品与场景要绝对的融合
-* 确保图片是可以在一个时间段集中拍摄完，避免前后落差大。
-* 不要出现不符合达人风格的人物（如：单身博主出现孩子）
-* 所有图片的动作、互动设计必须真实可拍摄，避免过度夸张、不安全或不可控的动作；儿童/宠物仅安排简单自然状态，不要求复杂配合。
-* 道具简化
-* 保证整体风格连贯性
+{skill_3}
 
 ## 技能4：生成图片的花字内容
-### 需要添加花字的情况
-1. 展示产品卖点/功能的图片规划
-- 核心目标：快速传递产品核心优势，花字可直接标注关键功能，帮助用户在 3 秒内抓取关键信息，适配功能型产品的效果对比展示场景
-===情况示例===
-美妆类：花字标注 "持妆24 小时效果"；
-家居类：花字标注 "小户型扩容神器"、"0 甲醛"
-===示例结束===
-- 要求：花字直接关联产品核心功能，无额外视觉辅助要求，重点在于 "功能/卖点关键词直达"
-
-2. 展示价格/促销信息的图片规划
-- 核心目标：放大限时折扣、满减等促销敏感信息，吸引用户关注。
-===情况示例===
- 花字标注 "持妆24 小时效果"
- 花字标注 "小户型扩容神器"、"0 甲醛" 
- ===示例结束===
-- 注意：避免使用 "原价" 等违规词汇，替换为 "券后价""会员专享" 等合规表述。
-
-3. 展示使用步骤/教程的图片规划
-- 核心目标：清晰引导教程类内容的操作流程，降低用户理解成本，通常适配 DIY 手工、护肤流程等教程类种草内容。
-===示例===
-在图文对应位置叠加花字，如 "Step1：洁面后取适量精华"、"Step2：沿纹理涂抹面霜"
-===示例结束===
-- 要求：需搭配箭头、数字序号（如 Step1/2/3）等辅助元素，确保步骤顺序可视化，让操作流程更清晰。
-
-4. 通过展示情绪展示产品卖点/功能
-- 判断依据：展示产品卖点/功能的另一种方式
-- 核心目标：传递博主使用产品后的情绪 / 感受，或营造场景氛围，增强种草内容的情感共鸣。
-===示例===
-用花字标注 "小小一个很好携带~"、"今天天气真好呀"
-===示例结束===
-- 注意：无需固定视觉格式，重点在于 "情绪 / 感受关键词传递"。
-
-**仔细分析图片规划的内容，对于以上需要添加花字的情况，生成符合上述要求的花字。其他情况严禁生成花字**
-### 禁止加花字情况
-- 不符合以上4类的图片
+{skill_4}
 
 ## 技能5：备注
-针对每张图片，列出拍摄的注意事项
+{skill_5}
 
 ## 输出格式要求
-请严格按照以下JSON格式输出，不要包含任何额外的文本或解释：
-
-```
-{{
-  "content_direction": "根据技能2提取的创作方向",
-  "images": [
-    {{
-      "image_number": 1,
-      "image_type": "图片类型（从封面图、场景图、产品图、人物图、特写图、效果图中选择）",
-      "planning": "图片规划和花字的内容",
-      "remark": "拍摄注意事项"
-    }},
-    {{
-      "image_number": 2,
-      "image_type": "图片类型",
-      "planning": "图片规划和花字的内容",
-      "remark": "拍摄注意事项"
-    }}
-  ]
-}}
-
-请 generate{picture_number}张图片的规划内容。
+{output_format}
 
 ## 限制
-1. 在图片规划中，默认无需涉及任何痛点场景内容，仅家装类产品允许通过"装修前（问题状态）vs 装修后（改善状态）"的对比形式呈现痛点。
-2. 不使用 "家人们""宝子""铁子" 等特定称呼；谁懂啊！这种语句
-3. 图文规划是"静态"的，不涉及动作过程或时间推进。
-4. 不能写成"视频分镜脚本"，不要出现"随后""过一会儿""开始""打开"等动态词。
-5. 每张图片是一个独立的定格画面，而不是连续的故事。
-6. 严禁输出图片类型、图文规划、备注以外的内容（拍摄场景、拍摄人物、创作方向）
-7. 针对出现的人物一般称达人，其他的具体情况具体称呼
-
+{restrictions}
 """
 
             # 使用用户提示词或系统提示词
@@ -1310,86 +1212,61 @@ class GraphicOutlineAgent(BaseAgent):
                 blogger_style = sections.get("blogger_style", "")
             
             # 构建系统提示词
+            prompt_template = self.prompts.get("graphic_outline", {}).get("planting_content_cp", {})
+            
+            # 构建输入描述
+            input_description = prompt_template.get("input_description", "").format(
+                notice=notice,
+                outline_direction=outline_direction,
+                ProductHighlights=ProductHighlights,
+                blogger_style=blogger_style,
+                product_name=product_name,
+                picture_number=picture_number,
+                requirements=requirements
+            )
+            
+            # 构建必备技能
+            required_skills = prompt_template.get("required_skills", "")
+            
+            # 构建技能描述
+            skill_1 = prompt_template.get("skills", {}).get("skill_1", "")
+            skill_2 = prompt_template.get("skills", {}).get("skill_2", "")
+            skill_3 = prompt_template.get("skills", {}).get("skill_3", "")
+            
+            # 构建输出格式
+            output_format = prompt_template.get("output_format", "").format(picture_number=picture_number)
+            
+            # 构建限制
+            restrictions = "\n".join(prompt_template.get("restrictions", []))
+            
             system_prompt = f"""## 角色
-你是小红书图文规划架构师，擅长生成适用于小红书的图文规划大纲，涵盖选购攻略、深度测评、横向对比三种类型内容。你能够将核心信息点合理拆分到图片中，形成相互关联且连贯的图片逻辑，创作纯文字的笔记。
+{prompt_template.get("role", "")}
 
 ## 输入
-【注意事项】：{notice}
-【大纲方向建议】：{outline_direction}
-【卖点信息】：{ProductHighlights}
-【达人风格】：{blogger_style}
-【产品名称】：{product_name}
-【图片数量】：{picture_number}
-【创作要求】：{requirements}
+{input_description}
 
 ## 产品相关信息
 【 产品名称】：{product_name}
 【卖点信息】：{ProductHighlights}
 
 ## 必备技能
-- 信息搜集和筛选能力：精准搜索创作时需要的产品、品牌等信息，并且返回适合创作的信息或数据
+{required_skills}
 
 ## 技能
 ### 技能1：
- 理解【注意事项】、【大纲方向建议】、【创作要求】，将以上两个信息都考虑在内，其中【注意事项】为第一优先级，生成一份整合后的**内容创作方向**。（【大纲方向建议】、【创作要求】都属于创作的方向，但以【大纲方向建议】为第一优先级）
+{skill_1}
 
 ### 技能2：规划图文结构
-结合整合后的**内容创作方向**和输入产品相关信息，写出{picture_number}张测评类产品的图片规划 ，规划每张图的类型。  
-#### 常见图片类型与特性：
-- **大字报图**：突出观点/标题，常用于封面图或引流使用。
-- **参数拉表型**：用于展示多品牌产品的硬件参数、功能维度，横向对比为主，表格结构清晰、信息密度高，常用于封面图或第1张图。
-- **图文混排图**：用于承载复杂信息，如展示对比逻辑、选购逻辑、评测流程、结论观点，可配图标/图形/产品图，是选购类、测评类的主要输出载体。
-- **总结推荐图**：用于综合评估与推荐建议，搭配标签或图标说明推荐理由，常用于最后一张图。
-#### 测评/对比类（强调"信任感+真实性"）叙事框架
-选择最合适产品、内容创作方向的框架
-* 单品深度测评
-  - 框架：外观 & 功能 → 使用场景演示 → 数据/效果反馈 → 总结推荐理由
-  - 示例：新鞋10KM实战测评
-* 硬核测评 / 实验拆解类
-  - 框架：亮出产品 → 测评维度  → 实验方法（模拟真实使用场景 or 实验室测试）  → 分维度展示测试结果  → 综合结论（选购建议）  
-  - 示例：新鞋全方位硬核测评（高处扔鸡蛋测回弹缓震、湿地测抓地等）
-* 横向对比测评
-  - 框架：A产品 vs B产品（或多款竞品） → 测评维度  → 同维度实测 → 结果展示 （重复以上直到测评维度介绍完）→ 综合结论（选购建议，推荐本品）
-* 同品牌多款测评
-  - 框架：品牌背景（先介绍为什么要选购，或者本期内容的背景） → 各系列/型号横向介绍 → 适配的使用场景/人群匹配 → 选购建议 →  行动号召
-* 榜单推荐
-  - 框架：场景/需求/主题切入（马拉松跑鞋，双十一好价，300档以内XXX） → 榜单产品逐个介绍（ 合作产品重点突出，篇幅长点）→ 综合总结 → 选购建议 
-* 选购指南
-  - 框架：场景/需求/主题切入 → 常见错误认知 → 错误思路/踩坑案例 → 正确选购标准/选购维度 → 怎么选 → 推荐合适产品
+{skill_2}
 
 ### 技能3：生成图片规划
-- 根据内容创作方向（技能1的整合结果）、选择的框架和图片的特性创作，为每张图片设定文字排版内容（标题、正文、图表结构、结论语等(可选)），正文信息要完整，要给出一个可以直接使用的版本，表达要符合达人语言风格并带有场景化体验，内容要适配小红书笔记的图片大小（3:4）。
-- 提供对应的排版建议，包括信息布局、强调色块、表格可读性等。
+{skill_3}
 
 ## 输出格式要求
-请严格按照以下JSON格式输出，不要包含任何额外的文本或解释：
-
-```
-{{
-  "content_direction": "根据技能1提取的创作方向",
-  "images": [
-    {{
-      "image_number": 1,
-      "image_type": "图片类型（从大字报图、参数拉表型、图文混排图、总结推荐图中选择）",
-      "planning": "图片规划内容",
-      "remark": "注意事项/补充说明"
-    }},
-    {{
-      "image_number": 2,
-      "image_type": "图片类型",
-      "planning": "图片规划内容",
-      "remark": "注意事项/补充说明"
-    }}
-  ]
-}}
-
-```
-
-Please generate{picture_number}张图片的 planning content.
+{output_format}
 
 ## 限制
-- 所有未提供的信息的需要通过搜索后都要写上
-- 严格遵守【注意事项】
+{restrictions}
 """
 
             # 使用用户提示词或系统提示词
