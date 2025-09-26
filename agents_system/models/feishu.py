@@ -39,7 +39,7 @@ class FeishuClient:
         self.encrypt_key = settings.FEISHU_ENCRYPT_KEY
         # 配置客户端，增加超时和基础URL
         self.client = httpx.AsyncClient(
-            timeout=httpx.Timeout(30.0),
+            timeout=httpx.Timeout(300),
             base_url="https://open.feishu.cn"
         )
         self.tenant_access_token = None

@@ -320,7 +320,7 @@ class GraphicOutlineAgent(BaseAgent):
             self.logger.info(f"Copy file request payload: {payload}")
             
             # 发送请求创建电子表格
-            async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(300)) as client:
                 response = await client.post(url, headers=headers, json=payload, timeout=self.timeout)
                 self.logger.info(f"Copy file response status code: {response.status_code}")
                 self.logger.info(f"Copy file response headers: {dict(response.headers)}")

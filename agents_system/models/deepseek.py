@@ -29,7 +29,7 @@ class DeepSeekModel(BaseModel):
         self.model = config.get("model") or settings.DEEPSEEK_MODEL
         self.api_url = "https://api.deepseek.com/chat/completions"
         self.client = httpx.AsyncClient()
-        self.timeout = httpx.Timeout(30.0)
+        self.timeout = httpx.Timeout(300)
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
@@ -173,7 +173,7 @@ class DeepSeekModel(BaseModel):
                     self.api_url,
                     headers=headers,
                     json=payload,
-                    timeout=30.0
+                    timeout=300
                 ) as response:
                     response.raise_for_status()
                     async for chunk in response.aiter_text():

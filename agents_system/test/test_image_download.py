@@ -33,7 +33,7 @@ class ImageDownloader:
             "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
             "Referer": "https://www.xiaohongshu.com/",
         }
-        self.client = httpx.AsyncClient(timeout=30.0, headers=headers)
+        self.client = httpx.AsyncClient(timeout=300, headers=headers)
         
         # 创建下载目录
         if not os.path.exists(self.download_dir):

@@ -65,7 +65,7 @@ class QwenModel(BaseModel):
         
         try:
             logger.info(f"Calling Qwen model with prompt: {prompt}...")
-            response = await self.client.post(url, headers=self.headers, json=payload, timeout=30.0)
+            response = await self.client.post(url, headers=self.headers, json=payload, timeout=300)
             response.raise_for_status()
             
             result = response.json()
@@ -105,7 +105,7 @@ class QwenModel(BaseModel):
         
         try:
             logger.info(f"Calling Qwen model stream with prompt: {prompt[:50]}...")
-            async with self.client.stream("POST", url, headers=self.headers, json=payload, timeout=30.0) as response:
+            async with self.client.stream("POST", url, headers=self.headers, json=payload, timeout=300) as response:
                 response.raise_for_status()
                 async for chunk in response.aiter_text():
                     if chunk.startswith("data:"):
