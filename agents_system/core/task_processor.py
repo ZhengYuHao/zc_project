@@ -6,369 +6,67 @@
 """
 
 import asyncio
+import json
+import httpx
 from typing import Dict, Any, List, Callable, Optional
 from utils.logger import get_logger
+from config.model_config import load_model_config
+from models.model_manager import ModelManager
 
 
+# 全局模型管理器实例
+_model_manager: Optional[ModelManager] = None
+
+
+def get_model_manager() -> ModelManager:
+    """获取模型管理器单例实例"""
+    global _model_manager
+    if _model_manager is None:
+        config = load_model_config()
+        _model_manager = ModelManager(config)
+    return _model_manager
+
+
+# 先定义TaskProcessor类再实例化
 class TaskProcessor:
-    """并发任务处理器"""
-    
+    """任务处理器类"""
     def __init__(self):
-        self.logger = get_logger("agent.task_processor")
         self.tasks = {}
     
-    def register_task(self, task_name: str, task_func: Callable):
-        """
-        注册任务处理函数
-        
-        Args:
-            task_name: 任务名称
-            task_func: 任务处理函数
-        """
-        self.tasks[task_name] = task_func
-        self.logger.info(f"Registered task: {task_name}")
+    def register_task(self, task_name: str, func: Callable):
+        """注册任务"""
+        self.tasks[task_name] = func
     
-    async def execute_tasks(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        并发执行注册的任务
-        
-        Args:
-            request_data: 请求数据
-            
-        Returns:
-            所有任务的执行结果
-        """
-        self.logger.info("Starting concurrent task execution")
-        
-        # 创建任务列表
-        tasks = []
-        task_names = []
-        
-        # 为每个注册的任务创建异步任务
-        for task_name, task_func in self.tasks.items():
-            # 检查请求数据中是否有该任务需要的数据
-            if self._should_execute_task(task_name, request_data):
-                task = asyncio.create_task(self._execute_single_task(task_name, task_func, request_data))
-                tasks.append(task)
-                task_names.append(task_name)
-        
-        if not tasks:
-            self.logger.info("No tasks to execute")
-            return {}
-        
-        self.logger.info(f"Executing {len(tasks)} tasks concurrently: {task_names}")
-        
-        # 并发执行所有任务
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        # 处理结果
-        processed_results = {}
-        for task_name, result in zip(task_names, results):
-            if isinstance(result, Exception):
-                self.logger.error(f"Task {task_name} failed with error: {str(result)}")
-                processed_results[task_name] = {
-                    "status": "error",
-                    "error": str(result)
-                }
-            else:
-                self.logger.info(f"Task {task_name} completed successfully")
-                processed_results[task_name] = {
-                    "status": "success",
-                    "data": result
-                }
-        
-        self.logger.info("All tasks completed")
-        return processed_results
-    
-    async def _execute_single_task(self, task_name: str, task_func: Callable, request_data: Dict[str, Any]) -> Any:
-        """
-        执行单个任务
-        
-        Args:
-            task_name: 任务名称
-            task_func: 任务处理函数
-            request_data: 请求数据
-            
-        Returns:
-            任务执行结果
-        """
-        try:
-            self.logger.info(f"Executing task: {task_name}")
-            # 调用任务函数，传入请求数据
-            result = await task_func(request_data)
-            return result
-        except Exception as e:
-            self.logger.error(f"Error executing task {task_name}: {str(e)}")
-            raise
-    
-    def _should_execute_task(self, task_name: str, request_data: Dict[str, Any]) -> bool:
-        """
-        判断是否应该执行某个任务
-        
-        Args:
-            task_name: 任务名称
-            request_data: 请求数据
-            
-        Returns:
-            是否应该执行任务
-        """
-        # 根据任务名称和请求数据判断是否需要执行
-        task_data_mapping = {
-            "target_audience_extractor": "ProductHighlights",
-            "required_content_extractor": "ProductHighlights",
-            "blogger_style_extractor": "blogger_link",
-            "product_category_extractor": "ProductHighlights",
-            "selling_points_extractor": "ProductHighlights",
-            "product_endorsement_extractor": "ProductHighlights",
-            "topic_extractor": "ProductHighlights"
-        }
-        
-        required_field = task_data_mapping.get(task_name)
-        if required_field and required_field in request_data and request_data[required_field]:
-            return True
-        
-        return False
+    async def execute_task(self, task_name: str, request_data: Dict[str, Any]) -> Dict[str, Any]:
+        """执行任务"""
+        if task_name not in self.tasks:
+            raise ValueError(f"Unknown task: {task_name}")
+        return await self.tasks[task_name](request_data)
 
 
 # 全局任务处理器实例
 task_processor = TaskProcessor()
 
 
-# 七个新的任务处理函数
-async def extract_target_audience(request_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    提取目标人群
+# 将TaskProcessor类的定义移到所有异步处理函数之前
+class TaskProcessor:
+    """任务处理器类"""
+    def __init__(self):
+        self.tasks = {}
     
-    Args:
-        request_data: 请求数据
-        
-    Returns:
-        处理结果
-    """
-    from models.doubao import call_doubao
-    from utils.logger import get_logger
+    def register_task(self, task_name: str, func: Callable):
+        """注册任务"""
+        self.tasks[task_name] = func
     
-    logger = get_logger("agent.task_processor")
-    
-    # 构建提示词
-    topic = request_data.get('topic', '')
-    ProductHighlights = request_data.get('ProductHighlights', '')
-    
-    prompt = f"""# 角色
-你是一位资深产品营销策略专家，拥有丰富的市场推广经验，擅长从复杂的产品信息中提炼出目标人群
-
-## 技能
-理解{ProductHighlights}提取出产品的目标人群
-
-## 输出
-目标人群：XX
-"""
-    
-    logger.info(f"Extracting target audience for topic: {topic}")
-    logger.info(f"Product highlights: {ProductHighlights}")
-    logger.info(f"Prompt: {prompt}")
-    
-    try:
-        # 调用豆包模型
-        result = await call_doubao(prompt)
-        logger.info(f"Doubao model response: {result}")
-        
-        # 解析结果
-        lines = result.strip().split('\n')
-        target_audience = ""
-        
-        logger.info(f"Parsing lines: {lines}")
-        
-        # 使用状态跟踪来处理跨多行的内容
-        current_section = None  # None, "audience"
-        audience_lines = []
-        
-        for line in lines:
-            logger.debug(f"Processing line: '{line}'")
-            logger.debug(f"Line bytes: {repr(line)}")
-            
-            # 检查是否是新的部分开始
-            if line.startswith("目标人群："):
-                current_section = "audience"
-                # 修复：更安全地提取内容，避免字符丢失
-                prefix = "目标人群："
-                if line.startswith(prefix):
-                    content = line[len(prefix):].strip()
-                    if content:
-                        audience_lines.append(content)
-            elif line.startswith("- "):
-                # 这是内容行
-                if current_section == "audience":
-                    audience_lines.append(line.strip())
-            elif line.strip() == "":
-                # 空行，不改变当前部分
-                pass
-            else:
-                # 其他行，根据当前部分添加
-                if current_section == "audience":
-                    audience_lines.append(line.strip())
-        
-        # 合并行内容
-        target_audience = "\n".join(audience_lines).strip()
-        
-        logger.info(f"Found target audience: {target_audience}")
-        
-        # 添加解析结果检查
-        logger.debug(f"Parse results - Target audience: '{target_audience}'")
-        
-        response = {
-            "target_audience": target_audience if target_audience else f"根据'{topic}'和'{ProductHighlights}'分析的目标人群",
-        }
-        
-        logger.info(f"Extract target audience result: {response}")
-        return response
-        
-    except Exception as e:
-        logger.error(f"Error extracting target audience: {str(e)}", exc_info=True)
-        # 出现异常时返回默认值
-        default_response = {
-            "target_audience": f"根据'{topic}'和'{ProductHighlights}'分析的目标人群",
-        }
-        logger.info(f"Returning default response: {default_response}")
-        return default_response
+    async def execute_task(self, task_name: str, request_data: Dict[str, Any]) -> Dict[str, Any]:
+        """执行任务"""
+        if task_name not in self.tasks:
+            raise ValueError(f"Unknown task: {task_name}")
+        return await self.tasks[task_name](request_data)
 
 
-async def extract_required_content(request_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    提取必提内容
-    
-    Args:
-        request_data: 请求数据
-        
-    Returns:
-        处理结果
-    """
-    from models.doubao import call_doubao
-    from utils.logger import get_logger
-    
-    logger = get_logger("agent.task_processor")
-    
-    # 获取请求数据
-    requirements = request_data.get('requirements', '')
-    ProductHighlights = request_data.get('ProductHighlights', '')
-    topic = request_data.get('topic', '')
-    
-    # 构建提示词
-    prompt = f"""# 角色
-你是一位资深产品营销策略专家，拥有丰富的市场推广经验，擅长从复杂的产品信息{ProductHighlights}中提炼出必提内容、目标人群和注意事项
-
-# 内容方向
-背景：在brief里面会有创作的必提内容内容方向，这些作为要求确保创作出图文大纲
-必提内容包括关键词（可能是核心IP，比如联名信息、活动信息）等
-
-
-# 输出结构
-必提内容：XX
-目标人群：XX
-注意事项：XX
-"""
-    
-    logger.info(f"Product highlights: {ProductHighlights}")
-    logger.info(f"Prompt: {prompt}")
-    
-    try:
-        # 调用豆包模型
-        result = await call_doubao(prompt)
-        logger.info(f"Doubao model response: {result}")
-        
-        # 解析结果
-        lines = result.strip().split('\n')
-        required_content = ""
-        target_audience = ""
-        notices = ""
-        
-        logger.info(f"Parsing lines: {lines}")
-        
-        # 使用状态跟踪来处理跨多行的内容
-        current_section = None  # None, "required", "audience", or "notices"
-        required_lines = []
-        audience_lines = []
-        notices_lines = []
-        
-        for line in lines:
-            logger.debug(f"Processing line: '{line}'")
-            logger.debug(f"Line bytes: {repr(line)}")
-            
-            # 检查是否是新的部分开始
-            if line.startswith("必提内容："):
-                current_section = "required"
-                # 修复：更安全地提取内容，避免字符丢失
-                prefix = "必提内容："
-                if line.startswith(prefix):
-                    content = line[len(prefix):].strip()
-                    if content:
-                        required_lines.append(content)
-            elif line.startswith("目标人群："):
-                current_section = "audience"
-                # 修复：更安全地提取内容，避免字符丢失
-                prefix = "目标人群："
-                if line.startswith(prefix):
-                    content = line[len(prefix):].strip()
-                    if content:
-                        audience_lines.append(content)
-            elif line.startswith("注意事项："):
-                current_section = "notices"
-                # 修复：更安全地提取内容，避免字符丢失
-                prefix = "注意事项："
-                if line.startswith(prefix):
-                    content = line[len(prefix):].strip()
-                    if content:
-                        notices_lines.append(content)
-            elif line.startswith("- "):
-                # 这是内容行
-                if current_section == "required":
-                    required_lines.append(line.strip())
-                elif current_section == "audience":
-                    audience_lines.append(line.strip())
-                elif current_section == "notices":
-                    notices_lines.append(line.strip())
-            elif line.strip() == "":
-                # 空行，不改变当前部分
-                pass
-            else:
-                # 其他行，根据当前部分添加
-                if current_section == "required":
-                    required_lines.append(line.strip())
-                elif current_section == "audience":
-                    audience_lines.append(line.strip())
-                elif current_section == "notices":
-                    notices_lines.append(line.strip())
-        
-        # 合并行内容
-        required_content = "\n".join(required_lines).strip()
-        target_audience = "\n".join(audience_lines).strip()
-        notices = "\n".join(notices_lines).strip()
-        
-        logger.info(f"Found required content: {required_content}")
-        logger.info(f"Found target audience: {target_audience}")
-        logger.info(f"Found notices: {notices}")
-        
-        # 添加解析结果检查
-        logger.debug(f"Parse results - Required content: '{required_content}', "
-                    f"Target audience: '{target_audience}', Notices: '{notices}'")
-        
-        response = {
-            "required_content": required_content if required_content else f"必须包含的内容点: {requirements}",
-        }
-        
-        logger.info(f"Extract required content result: {response}")
-        return response
-        
-    except Exception as e:
-        logger.error(f"Error extracting required content: {str(e)}", exc_info=True)
-        # 出现异常时返回默认值
-        default_response = {
-            "required_content": f"必须包含的内容点: {requirements}",
-            "content_type": "核心要点",
-            "priority": "high"
-        }
-        logger.info(f"Returning default response: {default_response}")
-        return default_response
+# 全局任务处理器实例
+task_processor = TaskProcessor()
 
 
 async def extract_blogger_style(request_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -376,254 +74,165 @@ async def extract_blogger_style(request_data: Dict[str, Any]) -> Dict[str, Any]:
     提取达人风格理解
     
     Args:
-        request_data: 请求数据
+        request_data: 请求数据，包含url参数
         
     Returns:
         处理结果
     """
-    # 这里应该调用实际的豆包模型处理逻辑
-    # 暂时返回模拟数据
-    note_style = request_data.get('note_style', '')
-    return {
-        "blogger_style": f"达人风格分析: {note_style}",
-        "tone": "friendly" if "活泼" in note_style or "轻松" in note_style else "professional",
-        "expression_style": "图文并茂"
-    }
-
-
-async def extract_product_category(request_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    提取产品品类
-    
-    Args:
-        request_data: 请求数据
-        
-    Returns:
-        处理结果
-    """
-    from models.doubao import call_doubao
-    from utils.logger import get_logger
-    
     logger = get_logger("agent.task_processor")
     
-    # 获取请求数据
-    ProductHighlights = request_data.get('ProductHighlights', '')
-    
-    # 构建提示词
-    prompt = f"""# 角色
-你是一位资深产品营销策略专家，拥有丰富的市场推广经验，擅长从复杂的产品信息中提炼产品品类。
-
-读取文件ProductHighlights，准确识别并深入理解种草产品信息，从中精准提炼出产品所处的二级或三级分类。
-- 产品类目：着重提取产品所处的二级或三级分类。提取完成后，直接返回产品的二级或三级，甚至到四级分类（例如，制冰净水器属于厨卫家电 - 厨房家电 - 台式净饮机，只需返回最深一层的分类给我，台式净饮机）。
-
-产品亮点：{ProductHighlights}
-
-# 输出格式
-产品品类：XX
-
-## 限制
-1. 读取数据时要精确提取关键信息，重点聚焦产品二级或三级分类。
-2. 输出内容仅呈现产品的二级或三级分类，务必简洁明了。
-3. 内容必须严格基于文件中的真实信息，严禁自行创作。
-"""
-    
+    # 获取请求URL
+    api_url = request_data.get('blogger_link')
+    if not api_url:
+        logger.error("Missing URL in request data")
+        return {
+            "blogger_style": "达人风格分析: 未提供API URL",
+            "tone": "professional",
+            "expression_style": "图文并茂"
+        }
     
     try:
-        # 调用豆包模型
-        result = await call_doubao(prompt)
-        logger.info(f"Doubao model response: {result}")
-        
-        # 解析结果
-        lines = result.strip().split('\n')
-        product_category = ""
-        
-        logger.info(f"Parsing lines: {lines}")
-        
-        # 使用状态跟踪来处理跨多行的内容
-        current_section = None  # None, "category"
-        category_lines = []
-        
-        for line in lines:
-            logger.debug(f"Processing line: '{line}'")
-            logger.debug(f"Line bytes: {repr(line)}")
-            
-            # 检查是否是新的部分开始
-            if line.startswith("产品品类："):
-                current_section = "category"
-                # 修复：更安全地提取内容，避免字符丢失
-                prefix = "产品品类："
-                if line.startswith(prefix):
-                    content = line[len(prefix):].strip()
-                    if content:
-                        category_lines.append(content)
-            elif line.strip() == "":
-                # 空行，不改变当前部分
-                pass
-            else:
-                # 其他行，根据当前部分添加
-                if current_section == "category":
-                    category_lines.append(line.strip())
-        
-        # 合并行内容
-        product_category = "\n".join(category_lines).strip()
-        
-        logger.info(f"Found product category: {product_category}")
-        
-        # 添加解析结果检查
-        logger.debug(f"Parse results - Product category: '{product_category}'")
-        
-        response = {
-            "product_category": product_category 
+        # 准备POST请求数据
+        post_data = {
+            "size": 5,
+            "publicTimeEnd": "2025-09-01 00:00:00",
+            "publicTimeStart": "2025-06-01 00:00:00", 
+            "userUuid": "671f2bc6000000001d0224aa"
         }
         
-        logger.info(f"Extract product category result: {response}")
+        # 发送POST请求获取达人笔记数据
+        logger.info(f"Fetching blogger posts from: {api_url}")
+        async with httpx.AsyncClient() as client:
+            response = await client.post(api_url, json=post_data)
+            response.raise_for_status()
+            result = response.json()
+            
+        logger.info(f"Received {len(result.get('data', []))} posts from API")
+        
+        # 检查API响应
+        if result.get("code") != "200":
+            logger.error(f"API returned error: {result.get('msg', 'Unknown error')}")
+            return {
+                "blogger_style": "达人风格分析: 获取达人数据失败",
+                "tone": "professional",
+                "expression_style": "图文并茂"
+            }
+        
+        # 提取笔记数据
+        blogger_posts = result.get("data", [])
+        if not blogger_posts:
+            logger.warning("No posts found in API response")
+            return {
+                "blogger_style": "达人风格分析: 未获取到达人笔记数据",
+                "tone": "professional",
+                "expression_style": "图文并茂"
+            }
+        
+        # 构建提示词文本部分
+        text_prompt = """## 角色
+你是一位专业的内容分析与创作顾问，擅长为品牌合作达人制定定制化商单内容方向。你的任务是基于达人过往的内容风格与表达习惯，为团队提供清晰的内容创作切入点。
+
+**目标说明**：本分析用于商单合作前的内容大纲制定环节，基于达人既有内容风格与表达特征，辅助内容策划人员精准匹配品牌核心信息，明确内容切入角度与表达策略。
+
+### 技能
+## 技能 1：达人内容风格分析  
+请根据达人多篇笔记的【达人笔记封面图】和【配文】，分析以下要素：
+- **笔记视觉风格**：如配色、构图、场景、花字使用等  
+- **表达语言风格**：是否口语化/情绪感强/标语化/数据型/故事化等  
+- **人设定位、性别**：结合其内容表达方式，描述其在用户心中的角色形象 ；分析该达人的性别
+- **风格关键词标签**：如 #吐槽型 #干货控 #生活流 #踩坑党
+
+## 限制  
+- 回复仅围绕达人风格分析，不输出脚本、不进行达人选择判断；
+- 所有内容必须结构清晰、术语通用、语言自然，便于下游节点直接使用。
+
+请分析以下达人笔记内容：
+"""
+
+        # 构建消息内容（包括文本和图片）
+        content = [{"type": "text", "text": text_prompt}]
+        
+        # 添加笔记内容到消息中
+        for i, post in enumerate(blogger_posts, 1):
+            content.append({"type": "text", "text": f"\n笔记 {i}:\n"})
+            
+            # 添加图片（如果存在）
+            image_url = post.get('imagesList')
+            if image_url:
+                content.append({
+                    "type": "text", 
+                    "text": f"【达人笔记封面图】：\n"
+                })
+                # 添加图片URL到内容中
+                image_content = {
+                    "type": "image_url",
+                    "image_url": {"url": image_url}
+                }
+                content.append(image_content)
+            
+            # 添加配文（如果存在）
+            caption = post.get('description')
+            if caption:
+                content.append({
+                    "type": "text", 
+                    "text": f"\n【配文】：{caption}\n"
+                })
+
+        logger.info(f"Extracting blogger style for {len(blogger_posts)} posts")
+
+        # 调用豆包视觉模型，传递内容数组而不是纯文本
+        from models.doubao import get_doubao_model
+        doubao_model = get_doubao_model()
+        
+        # 使用特殊的模型配置来调用视觉模型
+        visual_model_config = {
+            "model": "ep-20250520143333-8ghr9"  # 视觉模型ID
+        }
+        
+        # 创建专门用于视觉分析的模型实例
+        visual_doubao_model = doubao_model.__class__(visual_model_config)
+        
+        logger.info(f"Sending request to Doubao visual model with {len(content)} content items")
+        
+        # 调用视觉模型
+        result = await visual_doubao_model._call_api("", messages=[{"role": "user", "content": content}])
+        
+        generated_text = result["choices"][0]["message"]["content"]
+        logger.info(f"Doubao visual model response: {generated_text}")
+        
+        # 解析结果
+        response = {
+            "blogger_style": generated_text,
+            "tone": "friendly" if "活泼" in generated_text or "轻松" in generated_text else "professional",
+            "expression_style": "图文并茂"
+        }
+        
+        logger.info(f"Extract blogger style result: {response}")
         return response
         
-    except Exception as e:
-        logger.error(f"Error extracting product category: {str(e)}", exc_info=True)
+    except httpx.HTTPError as e:
+        logger.error(f"HTTP error when fetching blogger posts: {str(e)}")
+        # 记录异常的详细信息
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         # 出现异常时返回默认值
         default_response = {
-            "product_category": ""
-            
+            "blogger_style": "达人风格分析: 获取达人数据时网络错误",
+            "tone": "professional",
+            "expression_style": "图文并茂"
         }
         logger.info(f"Returning default response: {default_response}")
         return default_response
-
-
-async def extract_selling_points(request_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    提取卖点信息
-    
-    Args:
-        request_data: 请求数据
-        
-    Returns:
-        处理结果
-    """
-    from models.doubao import call_doubao
-    from utils.logger import get_logger
-    
-    logger = get_logger("agent.task_processor")
-    
-    # 获取请求数据
-    ProductHighlights = request_data.get('ProductHighlights', '')
-    topic = request_data.get('topic', '')
-    
-    # 构建提示词
-    prompt = f"""# 角色
-你是一位资深产品营销策略专家，拥有丰富的市场推广经验，擅长从复杂的产品信息{ProductHighlights}中提炼与卖点（利益点）有关的信息
-
-# 卖点（利益点）
-背景：在不同的业务场景下，博主需要在视频或图文笔记中植入介绍产品，产品会有一些功能（卖点）。
-主打的产品功能＝卖点
-必提的产品功能＝核心卖点
-产品功能+对应使用场景（或者能解决的痛点）＝利益点
-卖点是品牌视角的叫法，利益点是用户视角的叫法
-
-# 流程
-1. 识别卖点
-理解卖点信息，提取出所有与卖点有关的信息
-
-2. 区分卖点类型
-结合卖点信息，理解卖点及卖点话术，区分卖点的类型，例如硬件参数型卖点、核心卖点、次要卖点。
-特别的，次要卖点可能会有多个，卖点信息会要求创作时提到的数量或提到哪个，在输出次要卖点的时候要提及
- 
-* 注意：任务是从卖点信息中**提取**卖点（利益点），并且确认卖点的类型。不要自己理解出卖点，并且卖点的类型不是完全的，不要自己理解出来并没有的卖点
-类型：核心卖点（利益点）、次要卖点
-
-产品信息{ProductHighlights}
-
-# 输出结构
-卖点类型对应的卖点
-
-===示例开始===
-核心卖点：在神抢手怎么点都好。大牌、精选、好价。用心选品 只为省心。品质精选一口价。神抢手是精选、物超所值的品质外卖。
-===示例结束===
-"""
-    
-
-    logger.info(f"Product highlights: {ProductHighlights}")
-    logger.info(f"Prompt: {prompt}")
-    
-    try:
-        # 调用豆包模型
-        result = await call_doubao(prompt)
-        logger.info(f"Doubao model response: {result}")
-        
-        # 解析结果
-        lines = result.strip().split('\n')
-        core_selling_points = ""
-        secondary_selling_points = ""
-        
-        logger.info(f"Parsing lines: {lines}")
-        
-        # 使用状态跟踪来处理跨多行的内容
-        current_section = None  # None, "core", or "secondary"
-        core_lines = []
-        secondary_lines = []
-        
-        for line in lines:
-            logger.debug(f"Processing line: '{line}'")
-            logger.debug(f"Line bytes: {repr(line)}")
-            
-            # 检查是否是新的部分开始
-            if line.startswith("核心卖点："):
-                current_section = "core"
-                # 修复：更安全地提取内容，避免字符丢失
-                prefix = "核心卖点："
-                if line.startswith(prefix):
-                    content = line[len(prefix):].strip()
-                    if content:
-                        core_lines.append(content)
-            elif line.startswith("次要卖点："):
-                current_section = "secondary"
-                # 修复：更安全地提取内容，避免字符丢失
-                prefix = "次要卖点："
-                if line.startswith(prefix):
-                    content = line[len(prefix):].strip()
-                    if content:
-                        secondary_lines.append(content)
-            elif line.startswith("- "):
-                # 这是卖点内容行
-                if current_section == "core":
-                    core_lines.append(line.strip())
-                elif current_section == "secondary":
-                    secondary_lines.append(line.strip())
-            elif line.strip() == "":
-                # 空行，不改变当前部分
-                pass
-            else:
-                # 其他行，根据当前部分添加
-                if current_section == "core":
-                    core_lines.append(line.strip())
-                elif current_section == "secondary":
-                    secondary_lines.append(line.strip())
-        
-        # 合并行内容
-        core_selling_points = "\n".join(core_lines).strip()
-        secondary_selling_points = "\n".join(secondary_lines).strip()
-        
-        logger.info(f"Found core selling points: {core_selling_points}")
-        logger.info(f"Found secondary selling points: {secondary_selling_points}")
-        
-        # 添加解析结果检查
-        logger.debug(f"Parse results - Core selling points: '{core_selling_points}', "
-                    f"Secondary selling points: '{secondary_selling_points}'")
-        
-        response = {
-            "selling_points": f"核心卖点: {core_selling_points}" if core_selling_points else "核心卖点: 未提取到内容",
-            "core_selling_points": core_selling_points,
-            "secondary_selling_points": secondary_selling_points
-        }
-        
-        logger.info(f"Extract selling points result: {response}")
-        return response
-        
     except Exception as e:
-        logger.error(f"Error extracting selling points: {str(e)}", exc_info=True)
+        logger.error(f"Error extracting blogger style: {str(e)}")
+        # 记录异常的详细信息
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         # 出现异常时返回默认值
         default_response = {
-            "selling_points": f"核心卖点: {ProductHighlights}",
+            "blogger_style": "达人风格分析: 未分析出具体风格",
+            "tone": "professional",
+            "expression_style": "图文并茂"
         }
         logger.info(f"Returning default response: {default_response}")
         return default_response
@@ -842,7 +451,10 @@ async def extract_topic(request_data: Dict[str, Any]) -> Dict[str, Any]:
         return response
         
     except Exception as e:
-        logger.error(f"Error extracting topic: {str(e)}", exc_info=True)
+        logger.error(f"Error extracting topic: {str(e)}")
+        # 记录异常的详细信息
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         # 出现异常时返回默认值
         default_response = {
             "main_topic": topic
@@ -851,11 +463,66 @@ async def extract_topic(request_data: Dict[str, Any]) -> Dict[str, Any]:
         return default_response
 
 
+class TaskProcessor:
+    """并发任务处理器"""
+    
+    def __init__(self):
+        self.logger = get_logger("agent.task_processor")
+        self.tasks = {}
+    
+    def register_task(self, task_name: str, task_func: Callable):
+        """
+        注册任务处理函数
+        
+        Args:
+            task_name: 任务名称
+            task_func: 任务处理函数
+        """
+        self.tasks[task_name] = task_func
+        self.logger.info(f"Registered task: {task_name}")
+    
+    async def execute_tasks(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
+        """执行所有注册的任务"""
+        results = {}
+        
+        # 并发执行所有任务
+        task_list = []
+        for task_name, task_func in self.tasks.items():
+            self.logger.info(f"Executing task: {task_name}")
+            task_list.append((task_name, task_func(request_data)))
+        
+        # 等待所有任务完成
+        for task_name, task_coro in task_list:
+            try:
+                result = await task_coro
+                results[task_name] = result
+                self.logger.info(f"Task {task_name} completed successfully")
+            except Exception as e:
+                self.logger.error(f"Task {task_name} failed with error: {str(e)}")
+                results[task_name] = {"error": str(e)}
+        
+        self.logger.info("All tasks completed")
+        return results
+    
+    async def _execute_single_task(self, task_name: str, task_func: Callable, request_data: Dict[str, Any]) -> Dict[str, Any]:
+        """执行单个任务"""
+        try:
+            self.logger.info(f"Executing task: {task_name}")
+            result = await task_func(request_data)
+            self.logger.info(f"Task {task_name} completed successfully")
+            return {task_name: result}
+        except Exception as e:
+            self.logger.error(f"Error executing task {task_name}: {str(e)}")
+            # 记录异常的详细信息
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            return {task_name: {"error": str(e)}}
+
+
+# 全局任务处理器实例
+task_processor = TaskProcessor()
+
 # 注册所有任务
-# task_processor.register_task("target_audience_extractor", extract_target_audience)  # 注册目标人群提取任务
-# task_processor.register_task("required_content_extractor", extract_required_content)  # 注册必提内容提取任务
 task_processor.register_task("blogger_style_extractor", extract_blogger_style)  # 注册达人风格理解提取任务
-# task_processor.register_task("product_category_extractor", extract_product_category)  # 注册产品品类提取任务
-# task_processor.register_task("selling_points_extractor", extract_selling_points)  # 注册卖点提取任务
 task_processor.register_task("product_endorsement_extractor", extract_product_endorsement)  # 注册产品背书提取任务
 task_processor.register_task("topic_extractor", extract_topic)  # 注册话题提取任务

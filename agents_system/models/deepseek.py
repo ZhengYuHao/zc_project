@@ -19,14 +19,14 @@ class DeepSeekModel(BaseModel):
             from config.settings import settings
             config = {
                 "api_key": settings.DEEPSEEK_API_KEY,
-                "model": settings.DEEPSEEK_MODEL
+                "model": "deepseek-chat"  # 使用默认模型名称
             }
         
         super().__init__(config)
         
         from config.settings import settings
         self.api_key = config.get("api_key") or settings.DEEPSEEK_API_KEY
-        self.model = config.get("model") or settings.DEEPSEEK_MODEL
+        self.model = config.get("model") or "deepseek-chat"  # 使用默认模型名称
         self.api_url = "https://api.deepseek.com/chat/completions"
         self.client = httpx.AsyncClient()
         self.timeout = httpx.Timeout(300)

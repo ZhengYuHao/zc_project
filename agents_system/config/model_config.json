@@ -22,6 +22,10 @@
     "planting_content_cp": {
       "type": "doubao",
       "model": "ep-20250303093520-rh94v"
+    },
+    "blogger_style_analysis": {
+      "type": "doubao",
+      "model": "ep-20250520143333-8ghr9"
     }
   },
   "task_model_mapping": {
@@ -31,6 +35,7 @@
     "_generate_planting_captions": "planting_captions",
     "_generate_planting_content_cp": "planting_content_cp",
     "_generate_planting_captions_cp": "planting_captions_cp",
+    "blogger_style_analysis": "blogger_style_analysis",
     "default": "default"
   }
 }

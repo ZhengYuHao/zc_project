@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     DOUBAO_API_KEY: Optional[str] = Field(default=None, alias="DOUBAO_API_KEY")
     DOUBAO_MODEL_NAME: Optional[str] = Field(default=None, alias="DOUBAO_MODEL_NAME")
     
+    # DeepSeek大模型配置
+    DEEPSEEK_API_KEY: Optional[str] = Field(default=None, alias="DEEPSEEK_API_KEY")
+    
     # 日志配置
     LOG_LEVEL: str = Field(default="INFO", alias="LOG_LEVEL")
     LOG_FILE: Optional[str] = Field(default="logs/agents_system.log", alias="LOG_FILE")
