@@ -74,34 +74,57 @@ async def extract_blogger_style(request_data: Dict[str, Any]) -> Dict[str, Any]:
     提取达人风格理解
     
     Args:
-        request_data: 请求数据，包含url参数
+        request_data: 请求数据，包含小红书用户主页URL
         
     Returns:
         处理结果
     """
     logger = get_logger("agent.task_processor")
     
-    # 获取请求URL
-    api_url = request_data.get('blogger_link')
-    if not api_url:
+    # 获取请求URL（小红书用户主页URL）
+    xhs_profile_url = request_data.get('blogger_link')
+    if not xhs_profile_url:
         logger.error("Missing URL in request data")
         return {
-            "blogger_style": "达人风格分析: 未提供API URL",
+            "blogger_style": "达人风格分析: 未提供小红书用户主页URL",
             "tone": "professional",
             "expression_style": "图文并茂"
         }
     
     try:
+        # 从URL中提取userUuid（最后一部分）
+        # 例如：https://www.xiaohongshu.com/user/Profile/63611642000000001f0162a1
+        # 提取：63611642000000001f0162a1
+        from urllib.parse import urlparse
+        parsed_url = urlparse(xhs_profile_url)
+        path_parts = parsed_url.path.strip('/').split('/')
+        user_uuid = path_parts[-1] if path_parts else None
+        
+        if not user_uuid:
+            logger.error(f"无法从URL中提取userUuid: {xhs_profile_url}")
+            return {
+                "blogger_style": "达人风格分析: 无法从URL中提取用户ID",
+                "tone": "professional",
+                "expression_style": "图文并茂"
+            }
+        
+        logger.info(f"提取到的userUuid: {user_uuid}")
+        
+        # 从配置中获取API URL
+        from config.settings import settings
+        api_url = settings.XHS_USER_NOTES_API_URL
+        
         # 准备POST请求数据
         post_data = {
             "size": 5,
             "publicTimeEnd": "2025-09-01 00:00:00",
             "publicTimeStart": "2025-06-01 00:00:00", 
-            "userUuid": "671f2bc6000000001d0224aa"
+            "userUuid": user_uuid  # 使用从URL中提取的userUuid
         }
         
         # 发送POST请求获取达人笔记数据
         logger.info(f"Fetching blogger posts from: {api_url}")
+        logger.info(f"Request data: {post_data}")
         async with httpx.AsyncClient() as client:
             response = await client.post(api_url, json=post_data)
             response.raise_for_status()
@@ -495,11 +518,26 @@ class TaskProcessor:
         for task_name, task_coro in task_list:
             try:
                 result = await task_coro
-                results[task_name] = result
-                self.logger.info(f"Task {task_name} completed successfully")
+                # 统一结果格式
+                if isinstance(result, dict) and "error" in result:
+                    # 任务执行出错
+                    results[task_name] = {
+                        "status": "failed",
+                        "error": result["error"]
+                    }
+                else:
+                    # 任务执行成功
+                    results[task_name] = {
+                        "status": "success",
+                        "data": result
+                    }
+                self.logger.info(f"Task {task_name} completed with status: {results[task_name]['status']}")
             except Exception as e:
                 self.logger.error(f"Task {task_name} failed with error: {str(e)}")
-                results[task_name] = {"error": str(e)}
+                results[task_name] = {
+                    "status": "failed",
+                    "error": str(e)
+                }
         
         self.logger.info("All tasks completed")
         return results

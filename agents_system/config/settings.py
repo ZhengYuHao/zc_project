@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     # DeepSeek大模型配置
     DEEPSEEK_API_KEY: Optional[str] = Field(default=None, alias="DEEPSEEK_API_KEY")
     
+    # 小红书用户笔记API配置
+    XHS_USER_NOTES_API_URL: str = Field(
+        default="https://zongsing.com/prod-api/platform/agent/homepage/listNoteByUserUuid", 
+        alias="XHS_USER_NOTES_API_URL"
+    )
+    
     # 日志配置
     LOG_LEVEL: str = Field(default="INFO", alias="LOG_LEVEL")
     LOG_FILE: Optional[str] = Field(default="logs/agents_system.log", alias="LOG_FILE")
