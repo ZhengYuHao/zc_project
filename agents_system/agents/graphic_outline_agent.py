@@ -400,7 +400,7 @@ class GraphicOutlineAgent(BaseAgent):
                 "B5": "",  
                 "B6": "",  
                 "B7": "",  
-                "B8": "",  
+                "B8": outline_data.get("planting_captions", ""),  
                 "B9": outline_data.get("sections", {}).get("main_topic", ""),  
                 "C2": "",  
                 "D6": "",  
@@ -481,7 +481,7 @@ class GraphicOutlineAgent(BaseAgent):
                 "B5": "",  
                 "B6": "",  
                 "B7": "",  
-                "B8": captions_data['body'],  
+                "B8": outline_data.get("planting_captions", ""),  
                 "B9": outline_data.get("sections", {}).get("main_topic", ""),  
                 "C2": "",  
                 "D6": "",  
@@ -1208,7 +1208,7 @@ class GraphicOutlineAgent(BaseAgent):
             ProductHighlights = processed_data.get("ProductHighlights", "")  # 使用新的字段名
             # 从sections中提取目标人群和卖点信息
             sections = processed_data.get("sections", {})
-            requirements = processed_data.get("requirements", "")  # 内容方向建议
+            requirements = processed_data.get("requirements", "")  # 内용方向建议
             notice = processed_data.get("notice", "")  # 注意事项
             picture_number = processed_data.get("picture_number", 6)  # 图片数量，默认为6
             outline_direction = processed_data.get("outline_direction", "")
