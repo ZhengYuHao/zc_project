@@ -13,10 +13,7 @@ import os
 import asyncio
 from typing import Dict, List, Optional, Any
 from datetime import datetime
-
-from dotenv import load_dotenv
 from pydantic import BaseModel
-from sapperrag.GraphRAG import ask_knowledge_graph
 
 # 添加项目根目录到Python路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -25,6 +22,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models.doubao import DoubaoModel
 from config.settings import settings
 from utils.logger import get_logger
+from sapperrag.GraphRAG import ask_knowledge_graph
 
 logger = get_logger(__name__)
 logger.info("微信对话模块已导入")
@@ -427,11 +425,6 @@ class WechatConversationAgent:
                 logger.warning(f"Process prompt not found for user {user.user_id}, falling back to old model")
                 return await self._old_chat_model(message, user)  # 回退到旧模型
             
-            process_prompt_text = process_prompt.prompt_word.format(input=message.message)
-            logger.info(f"Calling process determination model for user {user.user_id}")
-            process_result = (await self.llm.generate_text(process_prompt_text)).strip()
-            logger.info(f"Process determination result for user {user.user_id}: {process_result}")
-            
             # 构建对话历史
             chat_history = self.storage.get_chat_history(user.user_id, 20)
             history_json = []
@@ -444,8 +437,24 @@ class WechatConversationAgent:
             history_text = "".join(history_json)
             logger.info(f"Built chat history for user {user.user_id} with {len(chat_history)} records")
             
+            # 格式化流程判断提示词，传递所需参数
+            process_prompt_text = process_prompt.prompt_word.format(
+                outputList=history_text,
+                input=message.message,
+                product=user.project_name,
+                name=user.nickname,
+                state=user.chat_status
+            )
+            logger.info(f"Calling process determination model for user {user.user_id}")
+            process_result = (await self.llm.generate_text(process_prompt_text)).strip()
+            logger.info(f"Process determination result for user {user.user_id}: {process_result}")
+            
             # 根据流程判断结果选择处理方式
-            if process_result == "000":
+            # 清理process_result，只保留数字
+            cleaned_process_result = "".join(filter(str.isdigit, process_result))
+            logger.info(f"==============================================================:{cleaned_process_result}")
+            
+            if cleaned_process_result == "000":
                 # 对话流程
                 logger.info(f"Routing to dialog flow for user {user.user_id}")
                 dialog_prompt = self.storage.get_prompt("WechatReply", "2对话回复-提示词")
@@ -453,35 +462,46 @@ class WechatConversationAgent:
                     logger.warning(f"Dialog prompt not found for user {user.user_id}, falling back to old model")
                     return await self._old_chat_model(message, user)
                 
-                dialog_prompt_text = dialog_prompt.prompt_word.format(
-                    product=user.project_name,
-                    name=user.nickname,
-                    outputList=history_text,
-                    input=message.message
-                )
+                # 为对话流程提示词准备变量
+                dialog_variables = {
+                    'product': user.project_name,
+                    'name': user.nickname,
+                    'outputList': history_text,
+                    'input': message.message,
+                    'state': user.chat_status
+                }
+                
+                # 动态注入变量到提示词中
+                dialog_prompt_text = dialog_prompt.prompt_word.format(**dialog_variables)
                 
                 logger.info(f"Calling dialog model for user {user.user_id}")
                 response = await self.llm.generate_text(dialog_prompt_text)
                 logger.info(f"Dialog model response for user {user.user_id}: {response[:100]}...")
                 return response
                 
-            elif process_result == "001":
+            elif cleaned_process_result == "001":
                 # 问答流程
                 logger.info(f"Routing to QA flow for user {user.user_id}")
                 qa_prompt = self.storage.get_prompt("WechatReply", "3智能问答系统规范-提示词")
                 if not qa_prompt:
                     logger.warning(f"QA prompt not found for user {user.user_id}, falling back to old model")
                     return await self._old_chat_model(message, user)
-                retrieve=ask_knowledge_graph(query=message.message)
+
+                retrieve = await ask_knowledge_graph(query=message.message)
                 print("----------------------------------------------")
                 print("retrieve", retrieve)
                 print("----------------------------------------------")
-                qa_prompt_text = qa_prompt.prompt_word.format(
-                    production=user.project_name,
-                    conversation=history_text,
-                    input=message.message,
-                    retrieve=retrieve
-                )
+
+                # 为问答流程提示词准备变量
+                qa_variables = {
+                    'production': user.project_name,
+                    'conversation': history_text,
+                    'input': message.message,
+                    'retrieve': retrieve
+                }
+                
+                # 动态注入变量到提示词中
+                qa_prompt_text = qa_prompt.prompt_word.format(**qa_variables)
                 
                 logger.info(f"Calling QA model for user {user.user_id}")
                 response = await self.llm.generate_text(qa_prompt_text)
@@ -489,7 +509,7 @@ class WechatConversationAgent:
                 return response
             else:
                 # 未知流程，回退到旧模型
-                logger.warning(f"Unknown process result '{process_result}' for user {user.user_id}, falling back to old model")
+                logger.warning(f"Unknown process result '{process_result}' (cleaned: '{cleaned_process_result}') for user {user.user_id}, falling back to old model")
                 return await self._old_chat_model(message, user)
                 
         except Exception as e:
