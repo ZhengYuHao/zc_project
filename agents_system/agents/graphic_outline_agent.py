@@ -174,7 +174,7 @@ class GraphicOutlineAgent(BaseAgent):
         Returns:
             ProcessRequest处理结果
         """
-        self.logger.info("Processing process_request API request")
+        self.logger.info(f"Processing process_request API request{request}")
 
         try:
             # 转换请求数据为process_request所需的格式
