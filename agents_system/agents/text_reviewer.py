@@ -369,8 +369,8 @@ class TextReviewerAgent(BaseAgent):
                                 ]
                             }
                         }
-                    ],
-                    "index": 0  # 插入到开头位置
+                    ]
+                    # 移除index参数，使用batch_delete方式实现内容替换而不是插入
                 }
                 
                 # 将处理结果写回飞书文档，带上版本号以防止冲突

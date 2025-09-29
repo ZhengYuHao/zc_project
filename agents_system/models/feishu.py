@@ -5,7 +5,14 @@ import hmac
 import time
 import sys
 import os
-from typing import Optional, Dict, Any
+import json
+import asyncio
+from typing import Dict, Any, Optional
+from utils.logger import get_logger
+# from utils.settings import settings
+# from .exceptions import DocumentVersionError
+
+logger = get_logger(__name__)
 
 # 添加项目根目录到Python路径
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -185,11 +192,12 @@ class FeishuClient:
         
         # 首先获取文档的根block_id
         doc_info = await self.read_document(document_id)
-        # 根据飞书API文档，要向文档添加内容，需要使用文档的document_id作为block_id参数
-        block_id = document_id
+        # 根据飞书API文档，要向文档添加内容，需要使用文档的根块ID作为block_id参数
+        # 根文档块的ID通常在meta数据中的document_id字段
+        root_block_id = doc_info.get("meta", {}).get("document_id", document_id)
         
         # 正确的API路径: https://open.feishu.cn/open-apis/docx/v1/documents/:document_id/blocks/:block_id/children
-        url = f"https://open.feishu.cn/open-apis/docx/v1/documents/{document_id}/blocks/{block_id}/children"
+        url = f"https://open.feishu.cn/open-apis/docx/v1/documents/{document_id}/blocks/{root_block_id}/children"
         headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json; charset=utf-8"
@@ -197,10 +205,23 @@ class FeishuClient:
         
         try:
             logger.info(f"Writing to document {document_id} in Feishu")
+            logger.info(f"Write URL: {url}")
+            logger.info(f"Write content: {content}")
+            
+            # 根据飞书文档内容更新与覆盖操作规范，使用POST方法直接写入内容
+            # 这会自动替换所有现有子块，实现原子性覆盖
             response = await self.client.post(url, headers=headers, json=content)
+            logger.info(f"Write response status: {response.status_code}")
+            
+            if response.status_code != 200:
+                logger.error(f"Write document failed with status {response.status_code}")
+                logger.error(f"Write document response text: {response.text}")
+            
             response.raise_for_status()
             
             result = response.json()
+            logger.info(f"Write document result: {result}")
+            
             if result.get("code") != 0:
                 # 检查是否是版本冲突错误
                 if result.get("code") == 99991666:  # 假设这是版本冲突的错误码
