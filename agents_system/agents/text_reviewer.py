@@ -3,6 +3,7 @@ import os
 from pydantic import BaseModel
 from typing import Optional
 import asyncio
+import json
 
 # 添加项目根目录到Python路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -551,144 +552,83 @@ class TextReviewerAgent(BaseAgent):
                             marked_cell_data[cell_ref] = marked_content
                             # self.logger.info(f"[违禁词处理后] 单元格: {cell_ref}, 内容: {marked_content}")
                         
-                        # 构建表格格式的文本用于模型处理
-                        # 创建行列结构
-                        max_row = 0
-                        max_col = 0
-                        cell_positions = {}  # {cell_ref: (row, col)}
-                        
-                        # 解析单元格引用获取行列信息
-                        for cell_ref in marked_cell_data.keys():
-                            col_str = ''.join(filter(str.isalpha, cell_ref))
-                            row_str = ''.join(filter(str.isdigit, cell_ref))
-                            if col_str and row_str:
-                                col_num = self._cell_ref_to_index(col_str)
-                                row_num = int(row_str) - 1
-                                cell_positions[cell_ref] = (row_num, col_num)
-                                max_row = max(max_row, row_num)
-                                max_col = max(max_col, col_num)
-                        
-                        # 构建表格矩阵
-                        table_matrix = [["" for _ in range(max_col + 1)] for _ in range(max_row + 1)]
-                        for cell_ref, content in marked_cell_data.items():
-                            if cell_ref in cell_positions:
-                                row, col = cell_positions[cell_ref]
-                                table_matrix[row][col] = content  # 使用标记后的内容
-                        
-                        # 转换为制表符分隔的文本
-                        table_text = "\n".join(["\t".join(row) for row in table_matrix])
+                        # 构建JSON格式的单元格数据用于模型处理
+                        json_cell_data = json.dumps(marked_cell_data, ensure_ascii=False, indent=2)
                         
                         # 构建提示词
-                        # 3. 违禁词替换：将用{{}}标记的违禁词必须替换成合适的内容，替换后必须删除{{}}标记。这是强制要求，不能跳过。
-                        # 5. 口语化转换：将书面表达转换为自然口语表述
-                        # 重要说明：
-                        # - 对于包含{{}}标记的内容，必须进行替换并移除括号，这是最重要的要求
-                        # - 不要删除包含{{}}标记的单元格内容
-                        # - 不要忽略任何{{}}标记
                         prompt = f"""
-# 角色
-你是一名专业的文本审核员，专注于表格内容的**错别字校正**和**语义逻辑优化**。你必须严格保持原表格的行列结构，仅修改内容文本。
+你是一个专业的文本审核员，专注于电子表格内容的错别字校正和语义逻辑优化。
 
-# 核心任务
-对用户提供的表格内容进行审核，执行以下任务：
-1.  **错别字检测与修正**：识别并修正所有错别字（包括形近字、音近字、义混字等）。
-2.  **语义逻辑优化**：确保内容符合语法规范、逻辑清晰、无歧义，避免成分残缺、搭配不当、语序混乱、调整内容逻辑，确保符合人类正常的认知习惯。
-3.  **格式保持**：严格保持原有表格格式，使用制表符(\\t)分隔列，换行符(\\n)分隔行。
+输入格式：
+一个JSON对象，键为单元格坐标（如"A1"、"B2"），值为单元格内容。
 
-# 重要格式要求
-- **绝对禁止**将内容转换为Markdown格式或其他任何表格格式
-- **必须**保持原有的制表符分隔格式
-- 每行代表表格的一行
-- 每列使用制表符(\\t)分隔
-- 不要添加任何额外的分隔符或格式符号
+输出格式：
+严格按照输入的JSON格式返回，键为单元格坐标，值为审核后的内容，不要有任何额外说明。
 
-原始表格内容：
-{table_text}
+审核要求：
+1. 错别字纠正：找出并修正所有错别字和语法错误
+2. 语句优化：确保句子结构合理，表达清晰流畅
+3. 保持原意：所有修改不能改变原文的核心意思
+4. 位置保持：严格按照原始单元格坐标返回内容，不要添加或删除单元格
+
+原始数据：
+{json_cell_data}
 """
-                        self.logger.info(f"调用大模型处理整个表格{table_text}")
+                        self.logger.info(f"调用大模型处理整个表格，单元格数量: {len(marked_cell_data)}")
                         # 调用大模型处理整个表格（通过模型管理器）
-                        corrected_table_text = await self.model_manager.call_model("text_review", prompt)
-                        self.logger.info(f"调用大模型处理整个表格后{corrected_table_text}")
-                        # 解析处理后的表格文本
-                        corrected_lines = corrected_table_text.strip().split('\n')
-                        corrected_matrix = [line.split('\t') for line in corrected_lines]
+                        corrected_json_text = await self.model_manager.call_model("text_review", prompt)
+                        self.logger.info(f"调用大模型处理整个表格后: {corrected_json_text}")
                         
-                        self.logger.info(f"模型返回的处理后表格行数: {len(corrected_matrix)}")
-                        for i, row in enumerate(corrected_matrix):
-                            self.logger.info(f"第{i+1}行单元格数: {len(row)}")
-                            for j, cell in enumerate(row):
-                                self.logger.info(f"  第{i+1}行第{j+1}列: '{cell}'")
+                        # 解析处理后的JSON数据
+                        try:
+                            corrected_cell_data = json.loads(corrected_json_text)
+                        except json.JSONDecodeError as e:
+                            self.logger.error(f"解析模型返回的JSON数据失败: {e}")
+                            # 回退到原始内容
+                            corrected_cell_data = marked_cell_data
                         
                         # 将处理后的数据按原位置写回
                         write_errors = []  # 记录写入错误
-                        for cell_ref, (row, col) in cell_positions.items():
+                        for cell_ref, content in corrected_cell_data.items():
                             try:
-                                self.logger.info(f"准备写回单元格 {cell_ref} (row={row}, col={col})")
+                                self.logger.info(f"准备写回单元格 {cell_ref}，内容: '{content}'")
                                 
-                                # 确保行列索引在处理后矩阵范围内
-                                if row < len(corrected_matrix) and col < len(corrected_matrix[row]):
-                                    corrected_content = corrected_matrix[row][col]
-                                    self.logger.info(f"从模型结果中获取内容: '{corrected_content}'")
-                                    
-                                    # 检查内容是否为空
-                                    if not corrected_content.strip():
-                                        self.logger.warning(f"模型返回空内容，使用标记后的内容: '{marked_cell_data.get(cell_ref, cell_data.get(cell_ref, ''))}'")
-                                        corrected_content = marked_cell_data.get(cell_ref, cell_data.get(cell_ref, ""))
-                                    
-                                    # 清理处理后的文本，确保不包含提示词
-                                    cleaned_content = self._clean_model_response(corrected_content)
-                                    self.logger.info(f"清理后的内容: '{cleaned_content}'")
-                                    
-                                    # 再次检查清理后的内容是否为空
-                                    if not cleaned_content.strip():
-                                        self.logger.warning(f"清理后内容为空，使用标记后的内容: '{marked_cell_data.get(cell_ref, cell_data.get(cell_ref, ''))}'")
-                                        cleaned_content = marked_cell_data.get(cell_ref, cell_data.get(cell_ref, ""))
-                                    
-                                    # 记录即将写入电子表格的数据
-                                    self.logger.info(f"[写入电子表格前] 单元格: {cell_ref}, 内容: '{cleaned_content}'")
-                                    
-                                    # 写回单个单元格
-                                    write_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values"
-                                    write_payload = {
-                                        "valueRange": {
-                                            "range": f"{sheet_id}!{cell_ref}:{cell_ref}",
-                                            "values": [[cleaned_content]]
-                                        }
+                                # 清理处理后的文本，确保不包含提示词
+                                cleaned_content = self._clean_model_response(content)
+                                self.logger.info(f"清理后的内容: '{cleaned_content}'")
+                                
+                                # 检查内容是否为空
+                                if not cleaned_content.strip():
+                                    self.logger.warning(f"模型返回空内容，使用标记后的内容: '{marked_cell_data.get(cell_ref, cell_data.get(cell_ref, ''))}'")
+                                    cleaned_content = marked_cell_data.get(cell_ref, cell_data.get(cell_ref, ""))
+                                
+                                # 再次检查清理后的内容是否为空
+                                if not cleaned_content.strip():
+                                    self.logger.warning(f"清理后内容为空，使用标记后的内容: '{marked_cell_data.get(cell_ref, cell_data.get(cell_ref, ''))}'")
+                                    cleaned_content = marked_cell_data.get(cell_ref, cell_data.get(cell_ref, ""))
+                                
+                                # 记录即将写入电子表格的数据
+                                self.logger.info(f"[写入电子表格前] 单元格: {cell_ref}, 内容: '{cleaned_content}'")
+                                
+                                # 写回单个单元格
+                                write_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values"
+                                write_payload = {
+                                    "valueRange": {
+                                        "range": f"{sheet_id}!{cell_ref}:{cell_ref}",
+                                        "values": [[cleaned_content]]
                                     }
-                                    
-                                    write_response = await client.put(write_url, headers=headers, json=write_payload)
-                                    write_response.raise_for_status()
-                                    write_result = write_response.json()
-                                    
-                                    if write_result.get("code") != 0:
-                                        error_msg = f"写入单元格 {cell_ref} 失败: {write_result}"
-                                        self.logger.error(error_msg)
-                                        write_errors.append(error_msg)
-                                    else:
-                                        self.logger.info(f"[写入电子表格成功] 单元格: {cell_ref}")
+                                }
+                                
+                                write_response = await client.put(write_url, headers=headers, json=write_payload)
+                                write_response.raise_for_status()
+                                write_result = write_response.json()
+                                
+                                if write_result.get("code") != 0:
+                                    error_msg = f"写入单元格 {cell_ref} 失败: {write_result}"
+                                    self.logger.error(error_msg)
+                                    write_errors.append(error_msg)
                                 else:
-                                    # 如果处理后的矩阵不包含该位置，使用原始内容（标记后的）
-                                    original_marked_content = marked_cell_data.get(cell_ref, cell_data.get(cell_ref, ""))
-                                    self.logger.info(f"[写入电子表格前] 单元格: {cell_ref}, 内容: '{original_marked_content}' (使用标记后的内容)")
-                                    
-                                    write_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values"
-                                    write_payload = {
-                                        "valueRange": {
-                                            "range": f"{sheet_id}!{cell_ref}:{cell_ref}",
-                                            "values": [[original_marked_content]]
-                                        }
-                                    }
-                                    
-                                    write_response = await client.put(write_url, headers=headers, json=write_payload)
-                                    write_response.raise_for_status()
-                                    write_result = write_response.json()
-                                    
-                                    if write_result.get("code") != 0:
-                                        error_msg = f"写入单元格 {cell_ref} 失败: {write_result}"
-                                        self.logger.error(error_msg)
-                                        write_errors.append(error_msg)
-                                    else:
-                                        self.logger.info(f"[写入电子表格成功] 单元格: {cell_ref}")
+                                    self.logger.info(f"[写入电子表格成功] 单元格: {cell_ref}")
                             except Exception as e:
                                 error_msg = f"写入单元格 {cell_ref} 时出错: {str(e)}"
                                 self.logger.error(error_msg)
@@ -721,6 +661,36 @@ class TextReviewerAgent(BaseAgent):
                                     fallback_error_msg = f"[出错回退] 写入单元格 {cell_ref} 时再次出错: {str(fallback_e)}"
                                     self.logger.error(fallback_error_msg)
                                     write_errors.append(fallback_error_msg)
+                        
+                        # 对于原始数据中存在但模型返回结果中没有的单元格，写回原始内容
+                        for cell_ref in marked_cell_data.keys():
+                            if cell_ref not in corrected_cell_data:
+                                try:
+                                    original_marked_content = marked_cell_data.get(cell_ref, cell_data.get(cell_ref, ""))
+                                    self.logger.info(f"[补充写入] 单元格: {cell_ref}, 内容: '{original_marked_content}'")
+                                    
+                                    write_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values"
+                                    write_payload = {
+                                        "valueRange": {
+                                            "range": f"{sheet_id}!{cell_ref}:{cell_ref}",
+                                            "values": [[original_marked_content]]
+                                        }
+                                    }
+                                    
+                                    write_response = await client.put(write_url, headers=headers, json=write_payload)
+                                    write_response.raise_for_status()
+                                    write_result = write_response.json()
+                                    
+                                    if write_result.get("code") != 0:
+                                        error_msg = f"[补充写入] 写入单元格 {cell_ref} 失败: {write_result}"
+                                        self.logger.error(error_msg)
+                                        write_errors.append(error_msg)
+                                    else:
+                                        self.logger.info(f"[补充写入] 写入电子表格成功: {cell_ref}")
+                                except Exception as e:
+                                    error_msg = f"[补充写入] 写入单元格 {cell_ref} 时出错: {str(e)}"
+                                    self.logger.error(error_msg)
+                                    write_errors.append(error_msg)
                         
                         # 汇总写入结果
                         if write_errors:
