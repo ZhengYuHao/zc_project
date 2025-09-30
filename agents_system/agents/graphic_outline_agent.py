@@ -258,8 +258,12 @@ class GraphicOutlineAgent(BaseAgent):
 
             
             # 创建飞书电子表格
+            blogger_link = request.get("blogger_link", "")
+            # 从链接中提取userUuid（最后一部分）
+            user_uuid = blogger_link.rstrip('/').split('/')[-1] if blogger_link else "默认主题"
+            
             spreadsheet_result = await self.create_feishu_sheet({
-                "topic": request.get("topic", "默认主题"),
+                "topic": user_uuid,
                 "outline_data": processed_data
             })
             
