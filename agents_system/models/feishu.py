@@ -30,6 +30,21 @@ logger.info(f"FEISHU_APP_SECRET from settings: {settings.FEISHU_APP_SECRET}")
 logger.info(f"FEISHU_VERIFY_TOKEN from settings: {settings.FEISHU_VERIFY_TOKEN}")
 logger.info(f"FEISHU_ENCRYPT_KEY from settings: {settings.FEISHU_ENCRYPT_KEY}")
 
+# 全局飞书客户端实例
+_feishu_client = None
+
+def get_feishu_client():
+    """
+    获取全局飞书客户端实例
+    
+    Returns:
+        FeishuClient: 飞书客户端实例
+    """
+    global _feishu_client
+    if _feishu_client is None:
+        _feishu_client = FeishuClient()
+    return _feishu_client
+
 
 class DocumentVersionError(Exception):
     """文档版本冲突异常"""
@@ -102,7 +117,7 @@ class FeishuClient:
         except Exception as e:
             logger.error(f"Error getting tenant_access_token: {str(e)}")
             raise
-        
+    
     async def read_document(self, document_id: str) -> Dict[str, Any]:
         """
         读取飞书文档内容
@@ -235,6 +250,58 @@ class FeishuClient:
             logger.error(f"Error writing to document {document_id}: {str(e)}")
             raise
     
+    async def update_block(self, document_id: str, block_id: str, content: Dict[str, Any]) -> bool:
+        """
+        更新飞书文档中的特定块
+        
+        Args:
+            document_id: 文档ID
+            block_id: 块ID
+            content: 要更新的内容，格式为 {"text": {...}}
+            
+        Returns:
+            是否更新成功
+        """
+        token = await self.get_tenant_access_token()
+        # 使用飞书更新块API: https://open.feishu.cn/open-apis/docx/v1/documents/{document_id}/blocks/{block_id}
+        url = f"https://open.feishu.cn/open-apis/docx/v1/documents/{document_id}/blocks/{block_id}"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json; charset=utf-8"
+        }
+        
+        # 根据飞书文档API规范，更新块内容应该使用PATCH方法
+        # 并且内容格式应该是update_text_elements
+        update_content = {
+            "update_text_elements": content.get("text", {})
+        }
+        
+        try:
+            logger.info(f"Updating block {block_id} in document {document_id}")
+            logger.info(f"Update URL: {url}")
+            logger.info(f"Update content: {json.dumps(update_content, ensure_ascii=False)}")
+            
+            # 使用PATCH方法更新块内容
+            response = await self.client.patch(url, headers=headers, json=update_content)
+            logger.info(f"Update response status: {response.status_code}")
+            
+            if response.status_code != 200:
+                logger.error(f"Update block failed with status {response.status_code}")
+                logger.error(f"Update block response text: {response.text}")
+            
+            response.raise_for_status()
+            
+            result = response.json()
+            logger.info(f"Update block result: {json.dumps(result, ensure_ascii=False)}")
+            
+            if result.get("code") != 0:
+                raise Exception(f"Failed to update block: {result}")
+            
+            return True
+        except Exception as e:
+            logger.error(f"Error updating block {block_id} in document {document_id}: {str(e)}")
+            raise
+    
     async def reply_message(self, message_id: str, content: str) -> bool:
         """
         回复飞书消息
@@ -306,15 +373,3 @@ class FeishuClient:
     async def close(self):
         """关闭HTTP客户端"""
         await self.client.aclose()
-
-
-# 全局飞书客户端实例
-feishu_client: Optional[FeishuClient] = None
-
-
-def get_feishu_client() -> FeishuClient:
-    """获取飞书客户端实例"""
-    global feishu_client
-    if feishu_client is None:
-        feishu_client = FeishuClient()
-    return feishu_client

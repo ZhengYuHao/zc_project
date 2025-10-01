@@ -1,9 +1,9 @@
 import sys
 import os
-from pydantic import BaseModel
-from typing import Optional
+from typing import Dict, Any, List, Optional
 import asyncio
 import json
+from pydantic import BaseModel
 
 # 添加项目根目录到Python路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -60,7 +60,8 @@ class TextReviewerAgent(BaseAgent):
         self.model_manager = model_manager
         
         # 初始化AC自动机并加载违禁词
-        self._init_prohibited_words()
+        self.ac_automaton = ACAutomaton()
+        # self._init_prohibited_words()
     
     def _init_prohibited_words(self):
         """
@@ -68,14 +69,12 @@ class TextReviewerAgent(BaseAgent):
         """
         self.logger.info("开始初始化违禁词AC自动机")
         try:
-            self.ac_automaton = ACAutomaton()
-            
             # 从目录中的所有文本文件构建AC自动机
             prohibited_words_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
                                               "prohibited_words_output_v2")
             
             if os.path.exists(prohibited_words_dir):
-                self.ac_automaton.build_from_directory(prohibited_words_dir)
+                # self.ac_automaton.build_from_directory(prohibited_words_dir)
                 self.logger.info("违禁词AC自动机初始化完成")
             else:
                 self.logger.warning(f"违禁词目录不存在: {prohibited_words_dir}")
@@ -163,7 +162,7 @@ class TextReviewerAgent(BaseAgent):
         self.logger.info("Text review completed")
         return response
     
-    def _extract_text_from_document(self, doc_content: dict) -> str:
+    def _extract_text_from_document(self, doc_content: Dict[str, Any]) -> str:
         """
         从飞书文档内容中提取文本
         
@@ -173,36 +172,105 @@ class TextReviewerAgent(BaseAgent):
         Returns:
             提取的文本内容
         """
-        if not doc_content:
-            self.logger.warning("文档内容为空")
+        # 飞书文档内容结构解析
+        # 根据飞书文档API，内容在blocks字段中
+        blocks = doc_content.get("items", [])  # 使用items而不是blocks
+        
+        if not blocks:
+            # 如果items为空，尝试直接从content中获取blocks
+            blocks = doc_content.get("blocks", [])
+            
+        if not blocks:
             return ""
         
-        # 直接尝试提取所有文本内容
-        def extract_all_text(obj):
-            """递归提取对象中的所有文本"""
-            texts = []
-            if isinstance(obj, dict):
-                for key, value in obj.items():
-                    if key == "content" and isinstance(value, str):
-                        texts.append(value)
-                    elif isinstance(value, (dict, list)):
-                        texts.extend(extract_all_text(value))
-            elif isinstance(obj, list):
-                for item in obj:
-                    texts.extend(extract_all_text(item))
-            return texts
+        text_parts = []
         
-        # 提取所有文本
-        all_texts = extract_all_text(doc_content)
-        extracted_text = "\n".join(all_texts).strip()
+        # 遍历所有块，提取文本内容
+        for block in blocks:
+            # 根据飞书文档API结构，处理不同类型的块
+            block_type = block.get("block_type")
+            
+            # 处理页面块
+            if "page" in block:
+                elements = block["page"].get("elements", [])
+                for element in elements:
+                    if "text_run" in element:
+                        content = element["text_run"].get("content", "")
+                        if content:
+                            text_parts.append(content)
+            
+            # 处理文本块
+            elif "text" in block:
+                elements = block["text"].get("elements", [])
+                for element in elements:
+                    if "text_run" in element:
+                        content = element["text_run"].get("content", "")
+                        if content:
+                            text_parts.append(content)
+            
+            # 处理段落块
+            elif block_type == 2:  # paragraph
+                children = block.get("children", [])
+                for child in children:
+                    if "text_run" in child:
+                        content = child["text_run"].get("content", "")
+                        if content:
+                            text_parts.append(content)
+            
+            # 处理标题块
+            elif block_type in [1, 3, 4, 5, 6, 7, 8, 9]:  # heading blocks
+                if "heading" + str(block_type) in block:
+                    heading = block["heading" + str(block_type)]
+                    if "elements" in heading:
+                        elements = heading["elements"]
+                        for element in elements:
+                            if "text_run" in element:
+                                content = element["text_run"].get("content", "")
+                                if content:
+                                    text_parts.append(content)
         
-        self.logger.info(f"提取到的文本长度: {len(extracted_text)}")
-        if len(extracted_text) > 100:
-            self.logger.info(f"提取到的文本前100个字符: {extracted_text[:100]}")
-        else:
-            self.logger.info(f"提取到的文本: {extracted_text}")
+        # 将所有文本部分连接起来
+        return "\n".join(text_parts)
+    
+    def _get_first_text_block_id(self, doc_content: Dict[str, Any]) -> Optional[str]:
+        """
+        获取文档中第一个文本块的ID，用于更新
         
-        return extracted_text
+        Args:
+            doc_content: 飞书文档内容
+            
+        Returns:
+            第一个文本块的ID，如果找不到则返回None
+        """
+        self.logger.info(f"Document content structure: {json.dumps(doc_content, ensure_ascii=False, indent=2)[:1000]}...")
+        
+        # 飞书文档内容结构解析
+        blocks = doc_content.get("items", [])
+        
+        if not blocks:
+            blocks = doc_content.get("blocks", [])
+            
+        if not blocks:
+            self.logger.warning("No blocks found in document content")
+            return None
+        
+        self.logger.info(f"Found {len(blocks)} blocks in document")
+        
+        # 查找第一个文本块
+        for i, block in enumerate(blocks):
+            self.logger.info(f"Block {i}: {json.dumps(block, ensure_ascii=False)[:200]}...")
+            block_id = block.get("block_id")
+            block_type = block.get("block_type")
+            
+            self.logger.info(f"Block ID: {block_id}, Block Type: {block_type}")
+            
+            # 查找段落块(类型为2)
+            if block_type == 2 and block_id:
+                self.logger.info(f"Found first text block with ID: {block_id}")
+                return block_id
+                
+        self.logger.warning("No text block (type 2) found in document")
+        return None
     
     def _mark_prohibited_words(self, text: str) -> str:
         """
@@ -353,28 +421,48 @@ class TextReviewerAgent(BaseAgent):
                 # 处理文本
                 review_result = await self.review_text(review_request)
                 
-                # 构造写入内容
-                # 根据飞书API文档，正确的格式应该包含children字段
-                write_content = {
-                    "children": [
-                        {
-                            "block_type": 2,  # paragraph
-                            "text": {
-                                "elements": [
-                                    {
-                                        "text_run": {
-                                            "content": review_result.corrected_text
-                                        }
-                                    }
-                                ]
-                            }
-                        }
-                    ]
-                    # 移除index参数，使用batch_delete方式实现内容替换而不是插入
-                }
+                # 获取文档中的第一个文本块ID用于更新
+                first_text_block_id = self._get_first_text_block_id(doc_content)
                 
-                # 将处理结果写回飞书文档，带上版本号以防止冲突
-                await self.feishu_client.write_document(document_id, write_content, doc_revision)
+                if first_text_block_id:
+                    # 使用更新块接口更新第一个文本块的内容
+                    update_content = {
+                        "elements": [
+                            {
+                                "text_run": {
+                                    "content": review_result.corrected_text
+                                }
+                            }
+                        ]
+                    }
+                    
+                    self.logger.info(f"Attempting to update block {first_text_block_id} with content: {review_result.corrected_text}")
+                    
+                    # 更新特定块的内容
+                    await self.feishu_client.update_block(document_id, first_text_block_id, {"text": update_content})
+                else:
+                    # 如果找不到合适的块进行更新，则使用原来的写入方式
+                    # 构造写入内容
+                    # 根据飞书API文档，正确的格式应该包含children字段
+                    write_content = {
+                        "children": [
+                            {
+                                "block_type": 2,  # paragraph
+                                "text": {
+                                    "elements": [
+                                        {
+                                            "text_run": {
+                                                "content": review_result.corrected_text
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        ]
+                        # 移除index参数，使用batch_delete方式实现内容替换而不是插入
+                    }
+                    # 将处理结果写回飞书文档，带上版本号以防止冲突
+                    await self.feishu_client.write_document(document_id, write_content, doc_revision)
                 
                 result = {
                     "status": "success",
@@ -758,113 +846,54 @@ class TextReviewerAgent(BaseAgent):
         for char in col_str:
             result = result * 26 + (ord(char) - ord('A') + 1)
         return result - 1
-
+    
     def _clean_model_response(self, text: str) -> str:
         """
-        清理模型响应，移除提示词相关内容
+        清理模型返回的文本，去除可能包含的提示词
         
         Args:
-            text: 模型响应文本
+            text: 模型返回的文本
             
         Returns:
             清理后的文本
         """
-        # 如果文本包含解释性内容，尝试提取原始文本
-        if "没有错别字" in text and "无需任何修改" in text and "处理后的文本仍为" in text:
-            # 提取引号中的内容
-            import re
-            quote_pattern = r'“([^”]+)”'
-            matches = re.findall(quote_pattern, text)
-            if matches:
-                return matches[-1]  # 返回最后一个引号中的内容
+        if not text:
+            return ""
         
-        # 定义需要过滤的提示词片段
-        filter_patterns = [
-            "你是一个专业的表格内容审核员。请审核以下电子表格内容，并按原格式返回优化后的内容。",
-            "表格结构说明：",
-            "每行用换行符分隔",
-            "每列用制表符(\\t)分隔",
-            "保持原有行列结构不变",
-            "审核要求：",
-            "1. 错别字纠正：找出并修正所有错别字和语法错误",
-            "2. 语句优化：确保句子结构合理，表达清晰流畅",
-            "3. 违禁词替换：将用{}标记的违禁词必须替换成合适的内容，替换后必须删除{}标记。这是强制要求，不能跳过。",
-            "4. 逻辑优化：调整内容逻辑，确保符合认知顺序",
-            "5. 口语化转换：将书面表达转换为自然口语表述",
-            "6. 保持原意：所有修改不能改变原文的核心意思",
-            "7. 格式保持：严格按照原有表格格式返回结果",
-            "8. 如果单元格内容无需修改，请直接返回原始内容，不要添加任何说明",
-            "重要说明：",
-            "对于包含{}标记的内容，必须进行替换并移除括号，这是最重要的要求",
-            "不要删除包含{}标记的单元格内容",
-            "不要忽略任何{}标记",
-            "原始表格内容：",
-            "优化后表格内容：",
-            "请作为专业内容审核员，对以下文本进行全面审查和优化：",
-            "审核文本：",
-            "一、核心审核要求",
-            "错别字纠正：精准识别并修正所有拼写错误、错别字和语法错误",
-            "语句通顺：确保句子结构合理，表达清晰流畅，语义相近的句子删除。",
-            "违禁词处理：替换所有用{}标记的违禁词（只能替换不能删除），替换后删除{}标记。",
-            "逻辑优化：调整内容逻辑顺序，确保产品卖点介绍符合使用流程（如洗烘套装先洗衣机后烘干机）和认知逻辑（如康师傅喝开水先工艺后口感）",
-            "口语化转换：将书面化表达转换为自然口语表述（如",
-            "原意保持：所有修改不得改变原文核心含义和意图",
-            "二、输出格式要求",
-            "直接返回修改后的完整文本",
-            "不添加任何额外说明或解释！！！！",
-            "使用zh语言输出",
-            "确保文本格式与原文一致",
-            "三、审核标准参考",
-            "采用千万级专业词库和数十亿训练语料的检测标准",
-            "符合内容安全与合规性要求",
-            "保持语言自然流畅且适合口语传播",
-            "请现在开始审核并返回修改后的文本",
-            "请现在开始审核并返回修改后的文本。如果文本已经完美无需修改，请直接返回原始文本内容，不要添加任何说明。",
-            "请你提供具体需要审核的文本内容，以便我按照要求进行审核和优化 。",
-            "错别字纠正：精确找出并改正所有拼写错误、错别字以及语法错误",
-            "语句通顺：保证句子结构恰当，表达清晰、通顺，把语义相近的句子删掉。",
-            "违禁词处理：替换所有用{}标注的违禁词（只能替换不能删除），替换后去掉{}标注。",
-            "逻辑优化：调整内容的逻辑顺序，要让产品卖点介绍符合使用流程（像洗烘套装先介绍洗衣机再介绍烘干机）以及认知逻辑（比如康师傅喝开水先讲工艺再讲口感）",
-            "口语化转换：把书面化表述转变成自然的口语说法（例如",
-            "原意保持：所有修改都不能改变原文的核心意思和意图",
-            "审核标准参考",
-            "内容安全与合规性要求",
-            "自然流畅且适合口语传播",
-            "你是一个专业的文本优化助手，请对以下文本进行审核和优化。",
-            "请严格按照以下要求进行处理：",
-            "1. 如果文本存在错别字、语法错误或违禁词，请进行修正",
-            "2. 如果文本已经完美，无需任何修改，请直接返回原始文本内容，不要添加任何说明",
-            "3. 不要添加任何解释、说明或其他额外内容",
-            "4. 直接返回处理后的文本内容",
-            "处理后文本：",
-            "你提供的文本",
-            "没有错别字、语法错误、违禁词等需要处理的问题",
-            "句子结构简单清晰",
-            "逻辑上也无需调整",
-            "口语化和原意方面也无需变动",
-            "所以处理后的文本仍为"
-        ]
+        # 去除首尾空白字符
+        cleaned = text.strip()
         
-        # 过滤掉所有提示词片段
-        cleaned_text = text
-        for pattern in filter_patterns:
-            cleaned_text = cleaned_text.replace(pattern, "")
+        # 去除可能的引号
+        if cleaned.startswith('"') and cleaned.endswith('"'):
+            cleaned = cleaned[1:-1]
+        elif cleaned.startswith("'") and cleaned.endswith("'"):
+            cleaned = cleaned[1:-1]
         
-        # 移除可能的修改说明部分
-        if "修改说明" in cleaned_text:
-            cleaned_text = cleaned_text.split("修改说明")[0].strip()
+        # 去除可能的JSON键值格式
+        if cleaned.startswith(":"):
+            cleaned = cleaned[1:].strip()
         
-        # 清理多余的空白行和空格
-        lines = cleaned_text.split('\n')
-        cleaned_lines = [line.strip() for line in lines if line.strip()]
-        cleaned_text = '\n'.join(cleaned_lines).strip()
+        # 去除可能的代码块标记
+        if cleaned.startswith("``") and cleaned.endswith("```"):
+            # 找到最后一个```
+            last_backticks = cleaned.rfind("```")
+            if last_backticks > 3:
+                cleaned = cleaned[3:last_backticks].strip()
         
-        # 如果处理后的文本为空，则返回原文本
-        if not cleaned_text:
-            return text
+        # 去除可能的JSON对象标记
+        if cleaned.startswith("{") and cleaned.endswith("}"):
+            try:
+                # 尝试解析为JSON对象
+                json_obj = json.loads(cleaned)
+                # 如果是字符串类型，则返回该字符串
+                if isinstance(json_obj, str):
+                    cleaned = json_obj
+            except json.JSONDecodeError:
+                # 如果不是有效的JSON，则保持原样
+                pass
         
-        return cleaned_text
-
+        return cleaned
+    
     async def process_feishu_message(self, request: FeishuMessageRequest) -> dict:
         """
         处理飞书消息
