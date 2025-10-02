@@ -89,6 +89,19 @@ class ProcessRequestInput(BaseModel):
     ProductHighlights: str
     outline_direction: str
     blogger_link: str
+    
+    class Config:
+        # 确保所有必需字段都经过验证
+        schema_extra = {
+            "example": {
+                "direction": "种草",
+                "requirements": "内容生动有趣",
+                "product_name": "智能手表",
+                "ProductHighlights": "长续航、健康监测",
+                "outline_direction": "用户体验",
+                "blogger_link": "https://example.com/blogger/123"
+            }
+        }
 
 
 class ProcessRequestResponse(BaseModel):
@@ -175,9 +188,34 @@ class GraphicOutlineAgent(BaseAgent):
         Returns:
             ProcessRequest处理结果
         """
-        self.logger.info(f"Processing process_request API request{request}")
+        request_id = get_request_id()
+        self.logger.info(f"Processing process_request API request with request_id {request_id}: {request}")
 
         try:
+            # 硬编码验证必填字段
+            missing_fields = []
+            if not request.direction:
+                missing_fields.append("direction")
+            if not request.requirements:
+                missing_fields.append("requirements")
+            if not request.product_name:
+                missing_fields.append("product_name")
+            if not request.ProductHighlights:
+                missing_fields.append("ProductHighlights")
+            if not request.outline_direction:
+                missing_fields.append("outline_direction")
+            if not request.blogger_link:
+                missing_fields.append("blogger_link")
+                
+            if missing_fields:
+                error_msg = f"Missing required fields: {', '.join(missing_fields)}"
+                self.logger.error(f"Validation error in process_request API with request_id {request_id}: {error_msg}")
+                return ProcessRequestResponse(
+                    status="error",
+                    error=error_msg,
+                    request_id=request_id
+                )
+
             # 转换请求数据为process_request所需的格式
             request_data = {
                 "direction": request.direction,
@@ -200,18 +238,18 @@ class GraphicOutlineAgent(BaseAgent):
                 processed_data=result.get("processed_data"),
                 spreadsheet=result.get("spreadsheet"),
                 error=result.get("error"),
-                request_id=result.get("request_id")
+                request_id=request_id
             )
             
-            self.logger.info("Successfully processed process_request API request")
+            self.logger.info(f"Successfully processed process_request API request with request_id {request_id}")
             return response
             
         except Exception as e:
-            self.logger.error(f"Error processing process_request API request: {str(e)}")
+            self.logger.error(f"Error processing process_request API request with request_id {request_id}: {str(e)}")
             return ProcessRequestResponse(
                 status="error",
                 error=str(e),
-                request_id=None
+                request_id=request_id
             )
     
     async def process_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
