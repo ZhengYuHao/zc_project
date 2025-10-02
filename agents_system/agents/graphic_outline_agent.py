@@ -81,14 +81,14 @@ class ProcessRequestInput(BaseModel):
     - outline_direction: 大纲方向，大纲制定的具体方向
     - blogger_link: 博主链接，参考的博主主页链接
     """
-    direction: Optional[str] = None
-    requirements: Optional[str] = None
-    product_name: Optional[str] = None
+    direction: str
+    requirements: str
+    product_name: str
     notice: Optional[str] = None
     picture_number: Optional[str] = None
-    ProductHighlights: Optional[str] = None
-    outline_direction: Optional[str] = None
-    blogger_link: Optional[str] = None
+    ProductHighlights: str
+    outline_direction: str
+    blogger_link: str
 
 
 class ProcessRequestResponse(BaseModel):
@@ -236,10 +236,7 @@ class GraphicOutlineAgent(BaseAgent):
             # 汇总任务结果并进行下一步处理
             processed_data = await self._aggregate_and_process(task_results, request)
             self.logger.info(f"Processing graphic outline request{processed_data}")
-            
-            # 使用正则表达式进行模糊匹配，支持种草类和测评类
-            direction = processed_data.get("direction", "")
-            if re.search(r'种草', direction):
+            if processed_data.get("direction") == "种草":
                 # 调用豆包大模型生成种草图文规划
                 planting_content = await self._generate_planting_content(processed_data)
                 processed_data["planting_content"] = planting_content
@@ -248,7 +245,8 @@ class GraphicOutlineAgent(BaseAgent):
                 planting_captions = await self._generate_planting_captions(processed_data, planting_content)
                 processed_data["planting_captions"] = planting_captions
                 
-            elif re.search(r'测评', direction):
+            
+            else:
                 # 处理图文规划(测试)的工作
                 planting_content = await self._generate_planting_content_cp(processed_data)
                 processed_data["planting_content"] = planting_content
@@ -258,13 +256,7 @@ class GraphicOutlineAgent(BaseAgent):
                 planting_captions = await self._generate_planting_captions_cp(processed_data, planting_content)
                 processed_data["planting_captions"] = planting_captions
                 
-            else:
-                # 未匹配到任何类型，返回错误
-                return {
-                    "status": "error",
-                    "error": f"不支持的方向类型: {direction}，仅支持种草类或测评类",
-                    "request_id": request_id
-                }
+
             
             # 创建飞书电子表格
             blogger_link = request.get("blogger_link", "")
@@ -1128,7 +1120,7 @@ class GraphicOutlineAgent(BaseAgent):
             sections = processed_data.get("sections", {})
             requirements = processed_data.get("requirements", "")  # 内容方向建议
             notice = processed_data.get("notice", "")  # 注意事项
-            picture_number = processed_data.get("picture_number", 15)  # 图片数量，默认为6
+            picture_number = processed_data.get("picture_number", 6)  # 图片数量，默认为6
             outline_direction = processed_data.get("outline_direction", "")
            
             
@@ -1229,7 +1221,7 @@ class GraphicOutlineAgent(BaseAgent):
             sections = processed_data.get("sections", {})
             requirements = processed_data.get("requirements", "")  # 内용方向建议
             notice = processed_data.get("notice", "")  # 注意事项
-            picture_number = processed_data.get("picture_number", 15)  # 图片数量，默认为6
+            picture_number = processed_data.get("picture_number", 6)  # 图片数量，默认为6
             outline_direction = processed_data.get("outline_direction", "")
            
             
