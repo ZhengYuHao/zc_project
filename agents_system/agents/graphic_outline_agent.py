@@ -236,7 +236,10 @@ class GraphicOutlineAgent(BaseAgent):
             # 汇总任务结果并进行下一步处理
             processed_data = await self._aggregate_and_process(task_results, request)
             self.logger.info(f"Processing graphic outline request{processed_data}")
-            if processed_data.get("direction") == "种草":
+            direction = processed_data.get("direction", "")
+            # 使用正则表达式匹配方向类型
+            # 匹配包含"种草"或"vlog"的内容
+            if re.search(r'(种|草|vlog)', direction):
                 # 调用豆包大模型生成种草图文规划
                 planting_content = await self._generate_planting_content(processed_data)
                 processed_data["planting_content"] = planting_content
@@ -246,7 +249,8 @@ class GraphicOutlineAgent(BaseAgent):
                 processed_data["planting_captions"] = planting_captions
                 
             
-            else:
+            # 匹配包含"测试"、"拼团"、"选购"或"指南"的内容
+            elif re.search(r'(测|评|选购|指南)', direction):
                 # 处理图文规划(测试)的工作
                 planting_content = await self._generate_planting_content_cp(processed_data)
                 processed_data["planting_content"] = planting_content
@@ -256,6 +260,11 @@ class GraphicOutlineAgent(BaseAgent):
                 planting_captions = await self._generate_planting_captions_cp(processed_data, planting_content)
                 processed_data["planting_captions"] = planting_captions
                 
+            else:
+                request_id = get_request_id()
+                error_msg = f"[{request_id}] Invalid direction value: {direction}. Expected values containing '种草', 'vlog' for first condition, or '测试', '拼团', '选购', '指南' for second condition."
+                self.logger.error(error_msg)
+                raise ValueError(f"Invalid direction: {direction}")
 
             
             # 创建飞书电子表格
