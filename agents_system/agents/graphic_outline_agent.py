@@ -19,6 +19,7 @@ from models.model_manager import ModelManager
 from config.settings import settings
 from utils.logger import get_logger
 from utils.cell_filler import CellFiller
+from utils.fetch_user_nickname import fetch_user_nickname
 from agents_system.core.task_processor import task_processor
 from core.request_context import get_request_id
 
@@ -235,7 +236,10 @@ class GraphicOutlineAgent(BaseAgent):
             # 汇总任务结果并进行下一步处理
             processed_data = await self._aggregate_and_process(task_results, request)
             self.logger.info(f"Processing graphic outline request{processed_data}")
-            if processed_data.get("direction") == "种草":
+            
+            # 使用正则表达式进行模糊匹配，支持种草类和测评类
+            direction = processed_data.get("direction", "")
+            if re.search(r'种草', direction):
                 # 调用豆包大模型生成种草图文规划
                 planting_content = await self._generate_planting_content(processed_data)
                 processed_data["planting_content"] = planting_content
@@ -244,8 +248,7 @@ class GraphicOutlineAgent(BaseAgent):
                 planting_captions = await self._generate_planting_captions(processed_data, planting_content)
                 processed_data["planting_captions"] = planting_captions
                 
-            
-            else:
+            elif re.search(r'测评', direction):
                 # 处理图文规划(测试)的工作
                 planting_content = await self._generate_planting_content_cp(processed_data)
                 processed_data["planting_content"] = planting_content
@@ -255,12 +258,24 @@ class GraphicOutlineAgent(BaseAgent):
                 planting_captions = await self._generate_planting_captions_cp(processed_data, planting_content)
                 processed_data["planting_captions"] = planting_captions
                 
-
+            else:
+                # 未匹配到任何类型，返回错误
+                return {
+                    "status": "error",
+                    "error": f"不支持的方向类型: {direction}，仅支持种草类或测评类",
+                    "request_id": request_id
+                }
             
             # 创建飞书电子表格
             blogger_link = request.get("blogger_link", "")
             # 从链接中提取userUuid（最后一部分）
             user_uuid = blogger_link.rstrip('/').split('/')[-1] if blogger_link else "默认主题"
+            
+            # 如果有user_uuid，则通过API获取用户昵称
+            if user_uuid != "默认主题":
+                nickname = await fetch_user_nickname(user_uuid)
+                if nickname:
+                    user_uuid = nickname
             
             spreadsheet_result = await self.create_feishu_sheet({
                 "topic": user_uuid,
@@ -1113,7 +1128,7 @@ class GraphicOutlineAgent(BaseAgent):
             sections = processed_data.get("sections", {})
             requirements = processed_data.get("requirements", "")  # 内容方向建议
             notice = processed_data.get("notice", "")  # 注意事项
-            picture_number = processed_data.get("picture_number", 6)  # 图片数量，默认为6
+            picture_number = processed_data.get("picture_number", 15)  # 图片数量，默认为6
             outline_direction = processed_data.get("outline_direction", "")
            
             
@@ -1214,7 +1229,7 @@ class GraphicOutlineAgent(BaseAgent):
             sections = processed_data.get("sections", {})
             requirements = processed_data.get("requirements", "")  # 内용方向建议
             notice = processed_data.get("notice", "")  # 注意事项
-            picture_number = processed_data.get("picture_number", 6)  # 图片数量，默认为6
+            picture_number = processed_data.get("picture_number", 15)  # 图片数量，默认为6
             outline_direction = processed_data.get("outline_direction", "")
            
             
