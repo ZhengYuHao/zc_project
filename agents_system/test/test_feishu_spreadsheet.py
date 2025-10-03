@@ -52,7 +52,7 @@ async def create_spreadsheet():
         
         # 发送POST请求创建电子表格
         try:
-            response = await feishu_client.client.post(url, headers=headers, json=payload, timeout=30.0)
+            response = await feishu_client.client.post(url, headers=headers, json=payload, timeout=300)
             print(f"响应状态码: {response.status_code}")
             print(f"响应头: {response.headers}")
             print(f"响应内容: {response.text}")
@@ -112,7 +112,7 @@ async def create_spreadsheet():
                     permission_url_with_type, 
                     headers=headers, 
                     json=permission_payload, 
-                    timeout=30.0
+                    timeout=300
                 )
                 print(f"权限设置响应状态码: {permission_response.status_code}")
                 print(f"权限设置响应内容: {permission_response.text}")

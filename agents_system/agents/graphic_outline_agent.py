@@ -1,5 +1,6 @@
 import sys
 import os
+import json
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import asyncio
@@ -8,16 +9,18 @@ import re
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 from core.request_context import get_request_id
+from fastapi import Request
 
 # 添加项目根目录到Python路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.base_agent import BaseAgent
 from models.feishu import get_feishu_client, DocumentVersionError
-from models.doubao import call_doubao
+from models.model_manager import ModelManager
 from config.settings import settings
 from utils.logger import get_logger
 from utils.cell_filler import CellFiller
+from utils.fetch_user_nickname import fetch_user_nickname
 from agents_system.core.task_processor import task_processor
 from core.request_context import get_request_id
 
@@ -66,15 +69,40 @@ class OutlineData(BaseModel):
 
 
 class ProcessRequestInput(BaseModel):
-    """ProcessRequest输入模型"""
-    topic: str
-    product_highlights: Optional[str] = None
-    note_style: Optional[str] = None
-    product_name: Optional[str] = None
-    direction: Optional[str] = None
-    blogger_link: Optional[str] = None
-    requirements: Optional[str] = None
-    style: Optional[str] = None
+    """ProcessRequest输入模型
+    用于图文大纲生成的输入参数模型，包含以下字段：
+    
+    字段说明：
+    - direction: 方向，内容创作的方向指导
+    - requirements: 要求，对内容的具体要求
+    - product_name: 产品名称，需要推广的产品名称
+    - notice: 备注，额外的注意事项或说明
+    - picture_number: 图片数量，要求的图片数量
+    - ProductHighlights: 产品亮点，产品的核心卖点
+    - outline_direction: 大纲方向，大纲制定的具体方向
+    - blogger_link: 博主链接，参考的博主主页链接
+    """
+    direction: str
+    requirements: str
+    product_name: str
+    notice: Optional[str] = None
+    picture_number: Optional[str] = None
+    ProductHighlights: str
+    outline_direction: str
+    blogger_link: str
+    
+    class Config:
+        # 确保所有必需字段都经过验证
+        schema_extra = {
+            "example": {
+                "direction": "种草",
+                "requirements": "内容生动有趣",
+                "product_name": "智能手表",
+                "ProductHighlights": "长续航、健康监测",
+                "outline_direction": "用户体验",
+                "blogger_link": "https://example.com/blogger/123"
+            }
+        }
 
 
 class ProcessRequestResponse(BaseModel):
@@ -90,7 +118,8 @@ class ProcessRequestResponse(BaseModel):
 class GraphicOutlineAgent(BaseAgent):
     """图文大纲生成智能体，用于生成图文内容的大纲并创建飞书电子表格"""
     
-    def __init__(self):
+    def __init__(self, model_manager: ModelManager):
+        # 使用graphic_outline作为名称，保持与原有路由一致
         super().__init__("graphic_outline")
         self.feishu_client = get_feishu_client()
         self.logger = get_logger("agent.graphic_outline")
@@ -103,10 +132,26 @@ class GraphicOutlineAgent(BaseAgent):
         self.template_spreadsheet_token = settings.GRAPHIC_OUTLINE_TEMPLATE_SPREADSHEET_TOKEN
         self.template_folder_token = settings.GRAPHIC_OUTLINE_TEMPLATE_FOLDER_TOKEN
         
-        # 添加特定路由
-        self.router.post("/feishu/sheet", response_model=dict)(self.create_feishu_sheet)
-        self.router.post("/process-request", response_model=ProcessRequestResponse)(self.process_request_api)
+        # 模型管理器
+        self.model_manager = model_manager
         
+        # 加载提示词
+        self._load_prompts()
+        
+        # 添加特定路由，保持与原有路由一致
+        self.router.post("/process-request", response_model=ProcessRequestResponse)(self.process_request_api)
+        self.router.post("/feishu/sheet", response_model=dict)(self.create_feishu_sheet)
+        
+    def _load_prompts(self):
+        """加载提示词"""
+        prompts_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'prompts', 'prompts.json')
+        try:
+            with open(prompts_path, 'r', encoding='utf-8') as f:
+                self.prompts = json.load(f)
+        except Exception as e:
+            self.logger.error(f"Failed to load prompts from {prompts_path}: {str(e)}")
+            self.prompts = {}
+    
     async def process(self, input_data: GraphicOutlineRequest) -> GraphicOutlineResponse:
         """
         处理图文大纲生成请求
@@ -117,33 +162,80 @@ class GraphicOutlineAgent(BaseAgent):
         Returns:
             图文大纲生成结果
         """
-        return await self.generate_outline(input_data)
+        result = await self.process_request(input_data.dict())
+        if result.get("status") == "success":
+            return GraphicOutlineResponse(
+                outline_data=result.get("processed_data", {}),
+                document_id=result.get("spreadsheet", {}).get("sheet_id", ""),
+                spreadsheet_token=result.get("spreadsheet", {}).get("spreadsheet_token", ""),
+                request_id=result.get("request_id")
+            )
+        else:
+            # 在出错情况下创建一个空的响应
+            return GraphicOutlineResponse(
+                outline_data={},
+                document_id="",
+                spreadsheet_token="",
+                request_id=result.get("request_id")
+            )
     
-    async def process_request_api(self, request: ProcessRequestInput) -> ProcessRequestResponse:
+    async def process_request_api(self, request: Request) -> ProcessRequestResponse:
         """
         RESTful API接口，用于处理process_request请求
         
         Args:
-            request: ProcessRequest输入数据
+            request: FastAPI Request对象 
             
         Returns:
             ProcessRequest处理结果
         """
-        self.logger.info("Processing process_request API request")
+        request_id = get_request_id()
+        self.logger.info(f"Processing process_request API request with request_id {request_id}")
 
         try:
-            # 转换请求数据为process_request所需的格式
-            request_data = {
-                "topic": request.topic,
-                "product_highlights": request.product_highlights,
-                "note_style": request.note_style,
-                "product_name": request.product_name,   
-                "direction": request.direction,
-                "blogger_link": request.blogger_link,
-                "requirements": request.requirements,
-                "style": request.style
-            }
-            
+            # 直接从请求体中获取原始数据
+            import json
+            body = await request.body()
+            try:
+                request_data = json.loads(body.decode('utf-8')) if body else {}
+            except json.JSONDecodeError:
+                self.logger.error(f"Invalid JSON in request body with request_id {request_id}")
+                return ProcessRequestResponse(
+                    status="error",
+                    error="Invalid JSON format",
+                    request_id=request_id
+                )
+
+            self.logger.info(f"Processing process_request API request with request_id {request_id}: {request_data}")
+
+            # 硬编码验证必填字段
+            missing_fields = []
+            if not request_data.get("direction"):
+                missing_fields.append("direction")
+            if not request_data.get("requirements"):
+                missing_fields.append("requirements")
+            if not request_data.get("product_name"):
+                missing_fields.append("product_name")
+            if not request_data.get("ProductHighlights"):
+                missing_fields.append("ProductHighlights")
+            if not request_data.get("outline_direction"):
+                missing_fields.append("outline_direction")
+            if not request_data.get("blogger_link"):
+                missing_fields.append("blogger_link")
+                
+            if missing_fields:
+                error_msg = f"Missing required fields: {', '.join(missing_fields)}"
+                self.logger.error(f"Validation error in process_request API with request_id {request_id}: {error_msg}")
+                return ProcessRequestResponse(
+                    status="error",
+                    error=error_msg,
+                    request_id=request_id
+                )
+
+            # 如果用户没有提交picture_number字段，默认设置为15张
+            if "picture_number" not in request_data:
+                request_data["picture_number"] = 15
+
             # 调用process_request方法
             result = await self.process_request(request_data)
             
@@ -154,18 +246,18 @@ class GraphicOutlineAgent(BaseAgent):
                 processed_data=result.get("processed_data"),
                 spreadsheet=result.get("spreadsheet"),
                 error=result.get("error"),
-                request_id=result.get("request_id")
+                request_id=request_id
             )
             
-            self.logger.info("Successfully processed process_request API request")
+            self.logger.info(f"Successfully processed process_request API request with request_id {request_id}")
             return response
             
         except Exception as e:
-            self.logger.error(f"Error processing process_request API request: {str(e)}")
+            self.logger.error(f"Error processing process_request API request with request_id {request_id}: {str(e)}")
             return ProcessRequestResponse(
                 status="error",
                 error=str(e),
-                request_id=None
+                request_id=request_id
             )
     
     async def process_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
@@ -186,11 +278,14 @@ class GraphicOutlineAgent(BaseAgent):
         try:
             # 并发执行七个任务
             task_results = await task_processor.execute_tasks(request)
-            
+            self.logger.info(f"task_results graphic outline request{task_results}")
             # 汇总任务结果并进行下一步处理
             processed_data = await self._aggregate_and_process(task_results, request)
-
-            if processed_data.get("note_style") == "种草":
+            self.logger.info(f"Processing graphic outline request{processed_data}")
+            direction = processed_data.get("direction", "")
+            # 使用正则表达式匹配方向类型
+            # 匹配包含"种草"或"vlog"的内容
+            if re.search(r'(种|草|vlog)', direction):
                 # 调用豆包大模型生成种草图文规划
                 planting_content = await self._generate_planting_content(processed_data)
                 processed_data["planting_content"] = planting_content
@@ -200,7 +295,8 @@ class GraphicOutlineAgent(BaseAgent):
                 processed_data["planting_captions"] = planting_captions
                 
             
-            else:
+            # 匹配包含"测试"、"拼团"、"选购"或"指南"的内容
+            elif re.search(r'(测|评|选购|指南)', direction):
                 # 处理图文规划(测试)的工作
                 planting_content = await self._generate_planting_content_cp(processed_data)
                 processed_data["planting_content"] = planting_content
@@ -210,11 +306,26 @@ class GraphicOutlineAgent(BaseAgent):
                 planting_captions = await self._generate_planting_captions_cp(processed_data, planting_content)
                 processed_data["planting_captions"] = planting_captions
                 
+            else:
+                request_id = get_request_id()
+                error_msg = f"[{request_id}] Invalid direction value: {direction}. Expected values containing '种草', 'vlog' for first condition, or '测试', '拼团', '选购', '指南' for second condition."
+                self.logger.error(error_msg)
+                raise ValueError(f"Invalid direction: {direction}")
 
             
             # 创建飞书电子表格
+            blogger_link = request.get("blogger_link", "")
+            # 从链接中提取userUuid（最后一部分）
+            user_uuid = blogger_link.rstrip('/').split('/')[-1] if blogger_link else "默认主题"
+            
+            # 如果有user_uuid，则通过API获取用户昵称
+            if user_uuid != "默认主题":
+                nickname = await fetch_user_nickname(user_uuid)
+                if nickname:
+                    user_uuid = nickname
+            
             spreadsheet_result = await self.create_feishu_sheet({
-                "topic": request.get("topic", "默认主题"),
+                "topic": user_uuid,
                 "outline_data": processed_data
             })
             
@@ -237,99 +348,6 @@ class GraphicOutlineAgent(BaseAgent):
                 "request_id": request_id
             }
     
-    
-        """
-        使用大模型生成大纲数据
-        
-        Args:
-            topic: 主题
-            requirements: 要求
-            style: 风格
-            
-        Returns:
-            生成的大纲数据
-        """
-        self.logger.info(f"Generating outline with LLM for topic: {topic}")
-        
-        # 构建提示词
-        prompt = f"""
-        请为以下主题生成一个详细的图文内容大纲：
-
-        主题：{topic}
-        风格：{style}
-        {f"特殊要求：{requirements}" if requirements else ""}
-
-        要求：
-        1. 包含3-5个章节
-        2. 每个章节包含标题、简要内容描述、建议图片数量和字数估算
-        3. 提供总字数和预计阅读时间
-        4. 以JSON格式返回结果，结构如下：
-        {{
-            "topic": "主题",
-            "sections": [
-                {{
-                    "title": "章节标题",
-                    "content": "章节内容简述",
-                    "images": ["图片建议1", "图片建议2"],
-                    "word_count": 200
-                }}
-            ],
-            "total_words": 1000,
-            "estimated_time": "5分钟"
-        }}
-
-        只返回JSON，不要包含其他内容。
-        """
-        
-        # 带重试机制的调用
-        for attempt in range(self.max_retries):
-            try:
-                # 调用大模型生成大纲
-                result_text = await call_doubao(prompt)
-                
-                # 解析JSON结果
-                import json
-                outline_data = json.loads(result_text)
-                
-                self.logger.info(f"Successfully generated outline with LLM for topic: {topic}")
-                return outline_data
-                
-            except json.JSONDecodeError as e:
-                self.logger.error(f"Failed to parse LLM response as JSON (attempt {attempt+1}/{self.max_retries}): {str(e)}")
-                if attempt == self.max_retries - 1:  # 最后一次尝试
-                    # 返回默认大纲数据
-                    default_outline = {
-                        "topic": topic,
-                        "sections": [
-                            {
-                                "title": "引言",
-                                "content": "简要介绍主题背景和重要性",
-                                "images": ["intro_image.jpg"],
-                                "word_count": 100
-                            },
-                            {
-                                "title": "主要内容",
-                                "content": "详细阐述主题的核心内容",
-                                "images": ["main_image1.jpg", "main_image2.jpg"],
-                                "word_count": 300
-                            },
-                            {
-                                "title": "总结",
-                                "content": "总结要点并提出展望",
-                                "images": [],
-                                "word_count": 50
-                            }
-                        ],
-                        "total_words": 450,
-                        "estimated_time": "3分钟"
-                    }
-                    return default_outline
-                await asyncio.sleep(1)  # 等待1秒后重试
-            except Exception as e:
-                self.logger.error(f"Error generating outline with LLM (attempt {attempt+1}/{self.max_retries}): {str(e)}")
-                if attempt == self.max_retries - 1:  # 最后一次尝试
-                    raise
-                await asyncio.sleep(1)  # 等待1秒后重试
     
     async def _create_spreadsheet_from_template(self, title: str) -> tuple:
         """
@@ -368,7 +386,7 @@ class GraphicOutlineAgent(BaseAgent):
             self.logger.info(f"Copy file request payload: {payload}")
             
             # 发送请求创建电子表格
-            async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(300)) as client:
                 response = await client.post(url, headers=headers, json=payload, timeout=self.timeout)
                 self.logger.info(f"Copy file response status code: {response.status_code}")
                 self.logger.info(f"Copy file response headers: {dict(response.headers)}")
@@ -433,16 +451,73 @@ class GraphicOutlineAgent(BaseAgent):
             是否填充成功
         """
         self.logger.info(f"Populating spreadsheet data for spreadsheet: {spreadsheet_token}")
+        self.logger.info(f"Populating spreadsheet data for outline_data: {outline_data}")
         
         try:
+            # 获取飞书访问令牌
+            tenant_token = await self.feishu_client.get_tenant_access_token()
             
+            # 准备要写入的数据（只写入特定单元格数据）
+            cell_data = {
+                "B1": "",  
+                "B2": "",  
+                "B3": "",  
+                "B4": "", 
+                "B5": "",  
+                "B6": "",  
+                "B7": "",  
+                "B8": outline_data.get("planting_captions", ""),  
+                "B9": outline_data.get("sections", {}).get("main_topic", ""),  
+                "C2": "",  
+                "D6": "",  
+                "E2": "",  
+                "F6": "",  
+            }
+
             # 测试种草图文规划生成
-            planting_content = await self._generate_planting_content(outline_data)
-            self.logger.info("Generated planting content:")
-            self.logger.info(planting_content[:-1])
+            # planting_content = await self._generate_planting_content(outline_data)
+            # self.logger.info("Generated planting content:")
+            # self.logger.info(planting_content[:-1])
 
             # 解析图文规划内容
-            planting_data = parse_planting_content(planting_content)
+            planting_content = outline_data.get("planting_content", "")
+            planting_data = []
+            
+            # 检查是否是JSON格式的输出
+            if planting_content:
+                # 首先尝试清理可能的代码块标记
+                cleaned_content = planting_content.strip()
+                if cleaned_content.startswith("```") and cleaned_content.endswith("```"):
+                    # 提取代码块中的内容
+                    lines = cleaned_content.split('\n')
+                    if len(lines) >= 3:
+                        # 去掉第一行和最后一行（代码块标记）
+                        cleaned_content = '\n'.join(lines[1:-1]).strip()
+                
+                # 检查是否是JSON格式的输出
+                if cleaned_content.startswith('{'):
+                    self.logger.info(f"cleaned_content spreadsheet data for outline_data: {cleaned_content}")
+                    try:
+                        import json
+                        planting_json = json.loads(cleaned_content)
+                        images = planting_json.get("images", [])
+                        for img in images:
+                            planting_data.append({
+                                "image_type": img.get("image_type", ""),
+                                "planning": img.get("planning", ""),
+                                "remark": img.get("remark", ""),
+                                "caption": ""
+                            })
+                    except json.JSONDecodeError:
+                        # 如果JSON解析失败，回退到原来的解析方法
+                        planting_data = parse_planting_content(planting_content)
+                else:
+                    # 使用原来的解析方法
+                    planting_data = parse_planting_content(planting_content)
+            else:
+                # 内容为空时使用原来的解析方法
+                planting_data = parse_planting_content(planting_content)
+                
             self.logger.info(f"Parsed planting data:{planting_data}")
             for i, data in enumerate(planting_data):
                 self.logger.info(f"  Image {i+1}:")     
@@ -452,40 +527,35 @@ class GraphicOutlineAgent(BaseAgent):
                 self.logger.info(f"    Remark: {data['remark']}")
 
             # 测试种草配文生成
-            planting_captions = await self._generate_planting_captions(outline_data, planting_content)
-            self.logger.info("\nGenerated planting captions:")
-            self.logger.info(planting_captions[:-1])
+            # planting_captions = await self._generate_planting_captions(outline_data, planting_content)
+            # self.logger.info("\nGenerated planting captions:")
+            # self.logger.info(planting_captions[:-1])
 
             # 解析配文内容
-            captions_data = parse_planting_captions(planting_captions)
+            captions_data = parse_planting_captions(outline_data.get("planting_captions",""))
             self.logger.info("Parsed captions data:")
             self.logger.info(f"  Titles: {captions_data['titles']}")
             self.logger.info(f"  Body length: {captions_data['body']}")
             self.logger.info(f"  Hashtags: {captions_data['hashtags']}")
-
             
-            # 获取飞书访问令牌
-            tenant_token = await self.feishu_client.get_tenant_access_token()
+            # 更新单元格数据
+            cell_data.update({
+                "B1": "",  
+                "B2": "",  
+                "B3": "",  
+                "B4": "", 
+                "B5": "",  
+                "B6": "",  
+                "B7": "",  
+                "B8": outline_data.get("planting_captions", ""),  
+                "B9": outline_data.get("sections", {}).get("main_topic", ""),  
+                "C2": "",  
+                "D6": "",  
+                "E2": "",  
+                "F6": "",  
+            })
             
-            # 准备要写入的数据（只写入特定单元格数据）
-            cell_data = {
-                "B1": "",  # 在B1单元格插入"你好"
-                "B2": "",  # 在B2单元格插入"你好"
-                "B3": "",  # 在B3单元格插入"你好"
-                "B4": "",  # 在B4单元格插入"你好"
-                "B5": "",  # 在B5单元格插入"你好"
-                "B6": "",  # 在B6单元格插入"你好"
-                "B7": "",  # 在B7单元格插入"你好"
-                "B8": captions_data['body'],  # 在B8单元格插入"你好"
-                "B9": outline_data.get("sections", {}).get("main_topic", ""),  # 在B9单元格插入"你好"
-                "C2": "",  # 在C2单元格插入"你好"
-                "D6": outline_data.get("selling_points"),  # 在D单元格插入"你好"
-                "E2": outline_data.get("blogger_style"),  # 在E2单元格插入"你好"
-                "F6": outline_data.get("product_endorsement"),  # 在F6单元格插入"你好"
-            }
-            
-            # 安全地处理planting_data数组，避免数组越界问题
-            # 每行处理两个数据项，分别放在左侧三列(A,B,C)和右侧三列(D,E,F)
+            # 处理图文规划数据
             if planting_data:
                 row = 12  # 起始行
                 # 每次处理两个数据项
@@ -616,99 +686,6 @@ class GraphicOutlineAgent(BaseAgent):
             # 即使格式设置失败，也不中断数据填充流程
             return False
     
-    def _cell_ref_to_row_index(self, cell_ref: str) -> int:
-        """
-        将单元格引用（如A1）转换为行索引（从0开始）
-        
-        Args:
-            cell_ref: 单元格引用，如"A1"
-            
-        Returns:
-            行索引
-        """
-        # 提取行号部分（数字）
-        row_part = ''.join(filter(str.isdigit, cell_ref))
-        return int(row_part) - 1  # 转换为0基索引
-    
-    def _cell_ref_to_col_index(self, cell_ref: str) -> int:
-        """
-        将单元格引用（如A1）转换为列索引（从0开始）
-        
-        Args:
-            cell_ref: 单元格引用，如"A1"
-            
-        Returns:
-            列索引
-        """
-        # 提取列号部分（字母）
-        col_part = ''.join(filter(str.isalpha, cell_ref.upper()))
-        
-        # 转换列为数字索引
-        col_index = 0
-        for char in col_part:
-            col_index = col_index * 26 + (ord(char) - ord('A'))
-        return col_index
-    
-    async def _fill_custom_data(self, spreadsheet_token: str, sheet_id: str, custom_fill_data: Dict[str, Any]) -> bool:
-        """
-        填充自定义数据到电子表格
-        
-        Args:
-            spreadsheet_token: 电子表格token
-            sheet_id: 工作表ID
-            custom_fill_data: 自定义填充数据，格式：
-                {
-                    "cells": {           # 指定单元格填充
-                        "A1": "A1值",
-                        "B2": "B2值"
-                    }
-                }
-                
-        Returns:
-            是否填充成功
-        """
-        self.logger.info(f"Filling custom data to spreadsheet: {spreadsheet_token}")
-        
-        try:
-            # 获取飞书访问令牌
-            tenant_token = await self.feishu_client.get_tenant_access_token()
-            
-            headers = {
-                "Authorization": f"Bearer {tenant_token}",
-                "Content-Type": "application/json; charset=utf-8"
-            }
-            
-            # 飞书电子表格操作API endpoint
-            write_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values"
-            
-            # 按单元格填充
-            value_ranges = []
-            for cell_ref, value in custom_fill_data["cells"].items():
-                value_ranges.append({
-                    "range": f"{sheet_id}!{cell_ref}:{cell_ref}",
-                    "values": [[value]]
-                })
-            
-            write_payload = {
-                "valueRanges": value_ranges
-            }
-            
-            # 发送请求
-            async with httpx.AsyncClient() as client:
-                response = await client.put(write_url, headers=headers, json=write_payload, timeout=self.timeout)
-                response.raise_for_status()
-                result = response.json()
-                
-                if result.get("code") != 0:
-                    raise Exception(f"Failed to write custom data to spreadsheet: {result}")
-            
-            self.logger.info(f"Successfully filled custom data to spreadsheet: {spreadsheet_token}")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error filling custom data to spreadsheet {spreadsheet_token}: {str(e)}")
-            return False
-
     async def create_feishu_sheet(self, request: Dict[str, Any]) -> dict:
         """
         创建飞书电子表格
@@ -839,7 +816,7 @@ class GraphicOutlineAgent(BaseAgent):
         Args:
             spreadsheet_token: 电子表格token
             sheet_id: 工作表ID
-            cell_data: 单元格数据，格式 {"A1": "值1", "B2": "값2"}
+            cell_data: 单元格数据，格式 {"A1": "값1", "B2": "값2"}
             
         Returns:
             处理结果，包含状态和消息的字典
@@ -880,6 +857,7 @@ class GraphicOutlineAgent(BaseAgent):
             处理后的数据
         """
         self.logger.info("Aggregating and processing task results")
+        self.logger.info(f"Request data received: {request_data}")
         
         # 汇总所有任务的成功结果
         aggregated_data = {}
@@ -892,29 +870,37 @@ class GraphicOutlineAgent(BaseAgent):
         
         # 进一步处理汇总的数据
         processed_outline = {
-            "topic": request_data.get("topic", ""),
-            "product_name": request_data.get("product_name", ""),
-            "product_highlights": request_data.get("product_highlights", ""),
-            "note_style": request_data.get("note_style", ""),
-            "requirements": request_data.get("requirements", ""),
+            
             "direction": request_data.get("direction", ""),
-            "blogger_link": request_data.get("blogger_link", ""),
+            "requirements": request_data.get("requirements", ""),
+            "product_name": request_data.get("product_name", ""),
+            "notice": request_data.get("notice", ""),
+            
+            "picture_number": request_data.get("picture_number", ""),
+            "ProductHighlights": request_data.get("ProductHighlights", ""),
+            "outline_direction": request_data.get("outline_direction",""),
             "sections": {},  # 使用字典映射方式存储
             "total_words": 0,
             "estimated_time": "5分钟"
         }
-        self.logger.info(f"Aggregating and processing task results  {aggregated_data}")
+        self.logger.info(f"Aggregating and processing task results: {aggregated_data}")
+        self.logger.info(f"Processed outline data: {processed_outline}")
+        
         # 根据任务结果生成大纲章节
         sections = {}
         
         # 定义需要处理的提取器映射关系
         extractor_mapping = {
-            "target_audience_extractor": "target_audience",
-            "required_content_extractor": "required_content", 
+            
+            #达人链接得出
+            # "image": request_data.get("image", ""),
+            # "caption": request_data.get("caption", ""),
+            
+            #达人风格
             "blogger_style_extractor": "blogger_style",
-            "product_category_extractor": "product_category",
-            "selling_points_extractor": "selling_points",
+            #产品背书
             "product_endorsement_extractor": "product_endorsement",
+            #话题
             "topic_extractor": "main_topic"
         }
         
@@ -923,7 +909,7 @@ class GraphicOutlineAgent(BaseAgent):
             if extractor_key in aggregated_data:
                 extractor_data = aggregated_data[extractor_key]
                 sections[section_key] = extractor_data.get(section_key, "")
-        
+        self.logger.info(f"sections{sections}")
         processed_outline["sections"] = sections
         processed_outline["total_words"] = sum(len(str(content)) for content in sections.values())
         
@@ -945,210 +931,62 @@ class GraphicOutlineAgent(BaseAgent):
         try:
             # 获取相关信息
             product_name = processed_data.get("product_name", "")
-            product_highlights = processed_data.get("product_highlights", "")
-            target_audience = ""
-            blogger_style = processed_data.get("note_style", "")
-            selling_points = ""
-            product_category = ""
-            requirements = processed_data.get("requirements", "")
-            
+            ProductHighlights = processed_data.get("ProductHighlights", "")  # 使用新的字段名
             # 从sections中提取目标人群和卖点信息
             sections = processed_data.get("sections", {})
-            content_requirement = ""
-            endorsement = ""
-            output = ""
+            requirements = processed_data.get("requirements", "")  # 内容方向建议
+            notice = processed_data.get("notice", "")  # 注意事项
+            picture_number = processed_data.get("picture_number", 6)  # 图片数量，默认为6
+            outline_direction = processed_data.get("outline_direction", "")
+           
             
             if isinstance(sections, dict):
-                target_audience = sections.get("target_audience", "")
-                selling_points = sections.get("selling_points", "")
-                product_category = sections.get("product_category", "")
-                content_requirement = sections.get("required_content", "")
-                endorsement = sections.get("product_endorsement", "")
-                output = planting_content
+                
+                blogger_style = sections.get("blogger_style", "")
             
             # 构建系统提示词
-            system_prompt = f"""# 角色
-你是一个专业的小红书与抖音笔记的配文创作者。擅长根据图文规划、创作要求、产品卖点、达人风格创作配文。
-配文：笔记的文案
-# 输入
-【创作要求】：{requirements}
-【内容方向建议】：{content_requirement}
-【卖点】：{selling_points}
-【达人风格】：{blogger_style}
-【图片规划】：{output}
+            prompt_template = self.prompts.get("graphic_outline", {}).get("planting_captions", {})
+            
+            # 构建输入描述
+            input_description = prompt_template.get("input_description", "").format(
+                notice=notice,
+                outline_direction=outline_direction,
+                ProductHighlights=ProductHighlights,
+                blogger_style=blogger_style,
+                planting_content=planting_content,
+                requirements=requirements
+            )
+            
+            # 构建技能1描述
+            skill_1 = prompt_template.get("skills", {}).get("skill_1", "")
+            
+            # 构建全局要求
+            global_requirements = prompt_template.get("global_requirements", "")
+            
+            # 构建禁止用语
+            forbidden_phrases = prompt_template.get("forbidden_phrases", "")
+            
+            # 构建输出格式和内容
+            output_format_and_content = prompt_template.get("output_format_and_content", "")
+            
+            # 构建限制
+            restrictions = prompt_template.get("restrictions", "")
+            
+            system_prompt = f"""## 角色
+{prompt_template.get("role", "")}
 
-【产品名称】：{product_name}
-【产品背书】：{endorsement}
-【产品品类】：{product_category}
-【图片规划】：{output}
+## 输入
+{input_description}
 
 ## 全局要求
-使用真实自然的第一人称叙述风格，语言生动亲切，体现真实使用感受
-1. **引入不生硬**：不说“今天我要推荐XX”，而是“我在做XX时发现了XX”。
-2. **种草不夸张**：用“我觉得”“试了下”“居然”等词弱化广告感，重点描述“场景里的体验”（比如“挂在推车上不晃”比“质量好”更具体）。
-3. **收尾不强迫**：引导像“顺手分享”，甚至可以不分享，比如“可以试试”，而非“赶紧买”。
+{global_requirements}
 
 ## 禁止话术
-不使用 “家人们”“宝子”“铁子” 等特定称呼
+{forbidden_phrases}
 
 ### 技能
-1. 理解图片规划的内容，按照图片规划的创作结构创作配文
-
-2. 创作配文
-理解提供的产品创作要求，内容方向建议，达人风格，卖点，必提内容
-核心依据：按照图片规划的创作结构创作配文，配文可以适当关联图片的内容
-风格适配：配文的语言风格、内容呈现方式、表达逻辑等需与达人的风格相似
-卖点融合：配文需自然的融合卖点
-创作要求落地：配文要遵守创作要求
-
-* 配文结构：标题、正文、收尾。
-
-## 强制输出格式要求
-**一、笔记配文**
-- **标题**：生成5个富有创意且吸引力的标题，巧妙融入emoji表情，提升趣味性和点击率，**字数控制在20字以内**。
-- **正文**：严格按照指定的创作结构撰写，正文内容需基于真实数据和专业分析，风格自然可信。避免镜头语言和剧本式表述。不含价格信息或门店推荐（除非【创作要求】提及）。巧妙融入少量emoji表情。**全文控制在800字以内**。
-- **标签**：输出【产品卖点】中要求的必带话题，同时输出3-4个符合规范的标签，包含主话题、精准话题、流量话题。
-"""
-            
-            # 使用用户提示词或系统提示词
-            prompt = user_prompt if user_prompt else system_prompt
-            
-            from models.doubao import call_doubao
-            captions_content = await call_doubao(prompt)
-            return captions_content
-            
-        except Exception as e:
-            self.logger.error(f"Error generating planting captions: {str(e)}")
-            return "种草配文生成失败"
-    
-    async def _generate_planting_captions_cp(self, processed_data: Dict[str, Any], planting_content: str, user_prompt: Optional[str] = None) -> str:
-        """
-        生成测评类图文的配文内容
-        
-        Args:
-            processed_data: 处理后的数据
-            planting_content: 已生成的图文规划内容
-            user_prompt: 用户自定义提示词（可选）
-            
-        Returns:
-            生成的测评类配文内容
-        """
-        try:
-            # 获取相关信息
-            product_name = processed_data.get("product_name", "")
-            product_highlights = processed_data.get("product_highlights", "")
-            blogger_style = processed_data.get("note_style", "")
-            selling_points = ""
-            product_category = ""
-            requirements = processed_data.get("requirements", "")
-            notice = ""  # 注意事项
-            content_requirement = ""  # 内容方向建议
-            output = planting_content  # 图文规划内容
-            
-            # 从sections中提取信息
-            sections = processed_data.get("sections", {})
-            
-            if isinstance(sections, dict):
-                selling_points = sections.get("selling_points", "")
-                product_category = sections.get("product_category", "")
-                notice = sections.get("notice", "")
-                content_requirement = sections.get("required_content", "")
-            
-            # 构建系统提示词
-            system_prompt = f"""# 角色
-你是一名真实用户视角的专业测评博主，拥有至少5年的{product_category}行业深度测评经验。擅长以第一人称写作，创作自然真实且极具吸引力与公信力的测评笔记，能够用Z世代语言解析产品内核，符合小红书或抖音等平台的内容风格。也精通避坑选购指南的撰写，针对{product_category}提供实用选购建议。
-
-## 全局要求
-使用真实自然的第一人称叙述风格，语言生动亲切，体现真实使用感受
-
-## 技能
-1. 理解图片规划{output}、注意事项{notice}、内容方向{content_requirement}，卖点{selling_points}，按照图片规划的逻辑和内容生成配文，同时要遵从创作要求{requirements}，符合内容方向。必须要有产品的介绍，产品在日常使用中的实际体验和效果，卖点（自然的融入到正文中，不能直接搬抄{selling_points}）
-配文结构：标题、正文、收尾。
-标题：引入部分，要引起共鸣
-正文：
-收尾：关联主题，让更多人使用产品
-
-## 强制输出格式要求
-**一、笔记配文**
-- **标题**：生成5个富有创意且吸引力的标题，巧妙融入emoji表情，提升趣味性和点击率，**字数控制在20字以内**。
-- **正文**：严格按照指定的创作结构撰写，正文内容需基于真实数据和专业分析，风格自然可信。段落简短（3-5句），避免镜头语言和剧本式表述。不含价格信息或门店推荐（除非【创作要求】提及）。**全文控制在800字以内**。
-- **标签**：输出【产品卖点】中要求的必带话题，同时输出3-4个符合规范的标签，包含主话题、精准话题、流量话题。
-
-## 限制
-1. 内容必须围绕产品测评和避坑选购指南，避免偏离主题。
-2. 保持竞品对比客观中立，侧重自家优势但不过度贬低其他产品。
-3. 文中所有数据来源需保证真实性，提高公信力（引用可在内容中以【】等符号隐晦表示）
-"""
-            
-            # 使用用户提示词或系统提示词
-            prompt = user_prompt if user_prompt else system_prompt
-            
-            from models.doubao import call_doubao
-            captions_content = await call_doubao(prompt)
-            return captions_content
-            
-        except Exception as e:
-            self.logger.error(f"Error generating planting captions: {str(e)}")
-            return "测评配文生成失败"
-
-    async def _generate_planting_content(self, processed_data: Dict[str, Any], user_prompt: Optional[str] = None) -> str:
-        """
-        生成种草图文规划内容
-        
-        Args:
-            processed_data: 处理后的数据
-            user_prompt: 用户自定义提示词（可选）
-            
-        Returns:
-            生成的种草图文规划内容
-        """
-        try:
-            # 获取相关信息
-            product_name = processed_data.get("product_name", "")
-            product_highlights = processed_data.get("product_highlights", "")
-            target_audience = ""
-            blogger_style = processed_data.get("note_style", "")
-            selling_points = ""
-            product_category = ""
-            requirements = processed_data.get("requirements", "")
-            
-            # 从sections中提取目标人群和卖点信息
-            sections = processed_data.get("sections", {})
-            content_requirement = ""
-            endorsement = ""
-            output = ""
-            
-            if isinstance(sections, dict):
-                target_audience = sections.get("target_audience", "")
-                selling_points = sections.get("selling_points", "")
-                product_category = sections.get("product_category", "")
-                content_requirement = sections.get("required_content", "")
-                endorsement = sections.get("product_endorsement", "")
-                output = sections.get("output", "")
-            
-            # 构建系统提示词
-            system_prompt = f"""### 角色
-你是一位专业的小红书种草图文规划师，擅长为 产品创作极具吸引力的种草类图文笔记。你的任务规划出高互动率的爆款内容的图文规划(必须要有10张图文规划的输出)，而不是视频分镜脚本。
-
-## 图文规划
-图文规划 = 针对图文笔记的创作规划。
-它包含：
-- 静态画面描述（定格的场景、构图、氛围）
-- 简短的配图文案（用于图片上的花字或简短口语化表达，≤20字）
-- 必要的备注（对光线、人物表情、氛围等补充说明）
-- 图片张数要求：必须必须必须10张！！！！!！！！！！
-
-## 产品背景信息
-- 产品名称：{product_name}
-- 产品品类：{product_category}
-- 目标人群：{target_audience}
-
-### 流程
-## 流程1： 
-需将创作要求的内容{requirements}作为核心约束，再将内容方向建议和必提内容中没有违背核心约束的部分与创作要求整合得到创作方向。
-
-## 流程2：生成图片规划内容
-1. 根据提供的产品创作要求，内容方向建议，达人风格，从爆文笔记结构中筛选最合适的1中结构，再结合创作要求，内容方向建议得到一个最完美的创作结构。
+## 技能1
+{skill_1}
 # 爆文笔记结构
 1.PREP结构
 - 框架公式：观点-理由-案例-观点
@@ -1160,7 +998,7 @@ class GraphicOutlineAgent(BaseAgent):
 - 示例文案：这款吹风机有负离子护发功能（F）→ 风力大还能快速吹干（A）→ 每天早晨节省15分钟出门时间（B）。
 - 适用内容类型：好物推荐、种草笔记。
 - 适配标题风格：数字式 / 好处直给式。
-3. 
+3. 场景递进结构
 - 框架公式：场景代入→产品展示→卖点解析→体验强化→情感收尾
 要求整个图片规划的场景要统一；卖点部分图片规划要有花字注明卖点
 4. 反转结构
@@ -1210,64 +1048,210 @@ class GraphicOutlineAgent(BaseAgent):
 - 适用内容类型：达人分享、专业背书。
 - 适配标题风格：人设式 / 经验分享式 / 权威背书式。
 
-2. 结合整合后的创作方向、产品背景信息、 卖点、创作的结构，写出15张种草类产品图片的静态拍摄规划。首先，规划图片的类型。
-常见图片类型及其特点，包括但不限于：
-* 封面图：构图吸睛、情绪明确，首图抢眼吸引点击，一般为产品特写+花字、产品使用场景图、产品使用氛围图等等几类
-* 人物图：达人出镜，营造亲和信任感
-* 场景图：还原真实使用情境，增强生活感
-* 特写图：展示材质、功能细节等局部亮点
-*  对比图：同类产品对比，常用于测评或盘点类笔记
-*  总结图：以产品特写+花字形式整洁呈现使用结论、推荐理由等
+2. 创作配文
+根据技能1得到的创作大纲和输入的【达人风格】创作配文。
+核心依据：按照图片规划的创作结构创作配文，配文可以适当关联图片的内容
+风格适配：配文的语言风格、内容呈现方式、表达逻辑等需与达人的风格相似
+卖点融合：配文需自然的融合卖点，严禁搬抄输入的【卖点信息】和生硬堆砌
+注意事项落地：配文严禁违背【注意事项】
+* 配文结构：标题、正文、收尾。
 
-3. 然后，按照创作结构和规划好的图片类型，结合创作方向、产品背景信息、图片类型的特点、必提内容、注意事项，规划图片的内容。同时，要保证遵循拍摄约束、无重复内容。
-规划图片内容：
- 场景确定：确定拍摄的场景，尽量限定在同一场景/空间，避免频繁切换场景。
- 产品植入与场景融合：将种草产品自然融入对应场景中（例如：餐厨场景放厨电 / 餐具；客厅场景放装饰摆件 / 小家电；卧室场景放床品 / 收纳用品；卫浴场景放洗漱好物等），体现产品在真实生活里的使用状态。
-功能与优势呈现：针对产品，规划拍摄特写镜头展示核心卖点和功能。
-通过从场景细节、拍摄主体（画面核心焦点是？主体是？它的状态、动作、外观、情感？例：保温杯旁放半杯温水 + 一片柠檬；粉底液旁放一支美妆蛋 + 一张浅粉色化妆棉，道具与产品间距 5-8cm，避免杂乱。）、镜头要求（例：用 "俯拍（镜头与桌面呈 45° 角）" 或 "平拍（镜头与产品中部齐平）、画面氛围四个维度文字描述。用具体指令+可视化描述替代模糊表述。
-* 拍摄约束：
-  时间段统一：确保图片是可以在一个时间段集中拍摄完，避免前后落差大。
-  道具简化
-  不要出现不符合达人风格的人物（如：单身博主出现孩子）
-**以上直接用完整的场景描述来写，不要分点说明**
-
-## 流程3：生成图片的文字内容
-1. 一般对于图片规划中体现产品卖点或功能的图片需要有花字注明，其它的图片不是很需要，如果要加，确认好花字的内容。同时，确定好文字排版（大小、位置）。
-
-## 流程4：备注
-针对每张图片，列出拍摄的注意事项
-
-## 强制输出格式
-图片类型：XX（从封面图、场景图、产品图、对比图、人物图、特写图、总结图中判断是什么类型）
-图文规划：
-XX（图片规划）
-XX（图片的文字内容）
-备注：XX
+## 强制输出格式和内容
+{output_format_and_content}
 
 ## 限制
-1. 在图片规划中，默认无需涉及任何痛点场景内容（如果选择单品种草框架是不要出现痛点内容），仅家装类产品允许通过"装修前（问题状态）vs 装修后（改善状态）"的对比形式呈现痛点。
-2. 不使用 "家人们""宝子""铁子" 等特定称呼；谁懂啊！这种语句
-3. 图文规划是"静态"的，不涉及动作过程或时间推进。
-4. 不能写成"视频分镜脚本"，不要出现"随后""过一会儿""开始""打开"等动态词。
-5. 每张图片是一个独立的定格画面，而不是连续的故事。
-
-
-## 创作要求
-- 核心要求：{requirements}
-- 产品卖点：{selling_points}
-- 内容方向：{content_requirement}
-- 产品背书：{endorsement}
-- 必提内容：{output}
-- 图片张数要求：必须必须必须10张！！！！!！！！！！
-
-
+{restrictions}
 """
             
             # 使用用户提示词或系统提示词
             prompt = user_prompt if user_prompt else system_prompt
             
-            from models.doubao import call_doubao
-            planting_content = await call_doubao(prompt)
+            # 调用模型
+            captions_content = await self.model_manager.call_model("_generate_planting_captions", prompt)
+            return captions_content
+            
+        except Exception as e:
+            self.logger.error(f"Error generating planting captions: {str(e)}")
+            return "种草配文生成失败"
+    
+    async def _generate_planting_captions_cp(self, processed_data: Dict[str, Any], planting_content: str, user_prompt: Optional[str] = None) -> str:
+        """
+        生成测评类图文的配文内容
+        
+        Args:
+            processed_data: 处理后的数据
+            planting_content: 已生成的图文规划内容
+            user_prompt: 用户自定义提示词（可选）
+            
+        Returns:
+            生成的测评类配文内容
+        """
+        try:
+            # 获取相关信息
+            product_name = processed_data.get("product_name", "")
+            ProductHighlights = processed_data.get("ProductHighlights", "")  # 使用新的字段名
+            # 从sections中提取目标人群和卖点信息
+            sections = processed_data.get("sections", {})
+            requirements = processed_data.get("requirements", "")  # 内容方向建议
+            notice = processed_data.get("notice", "")  # 注意事项
+            picture_number = processed_data.get("picture_number", 6)  # 图片数量，默认为6
+            outline_direction = processed_data.get("outline_direction", "")
+           
+            
+            if isinstance(sections, dict):
+                
+                blogger_style = sections.get("blogger_style", "")
+            
+            # 构建系统提示词
+            prompt_template = self.prompts.get("graphic_outline", {}).get("planting_captions_cp", {})
+            
+            # 构建输入描述
+            input_description = prompt_template.get("input_description", "").format(
+                outline_direction=outline_direction,
+                ProductHighlights=ProductHighlights,
+                planting_content=planting_content,
+                notice=notice,
+                requirements=requirements
+            )
+            
+            # 构建全局要求
+            global_requirements = prompt_template.get("global_requirements", "")
+            
+            # 构建技能描述
+            skill_1 = prompt_template.get("skills", {}).get("skill_1", "")
+            
+            # 构建输出格式
+            output_format = prompt_template.get("output_format", "")
+            
+            # 构建限制
+            restrictions = "\n".join(prompt_template.get("restrictions", []))
+            
+            system_prompt = f"""## 角色
+{prompt_template.get("role", "")}
+
+## 输入
+{input_description}
+
+## 全局要求
+{global_requirements}
+
+## 技能
+{skill_1}
+
+## 强制输出格式要求
+{output_format}
+
+## 限制
+{restrictions}
+"""
+            
+            # 使用用户提示词或系统提示词
+            prompt = user_prompt if user_prompt else system_prompt
+            
+            # 调用模型
+            captions_content = await self.model_manager.call_model("_generate_planting_captions_cp", prompt)
+            return captions_content
+            
+        except Exception as e:
+            self.logger.error(f"Error generating planting captions: {str(e)}")
+            return "测评配文生成失败"
+
+    async def _generate_planting_content(self, processed_data: Dict[str, Any], user_prompt: Optional[str] = None) -> str:
+        """
+        生成种草图文规划内容
+        
+        Args:
+            processed_data: 处理后的数据
+            user_prompt: 用户自定义提示词（可选）
+            
+        Returns:
+            生成的种草图文规划内容
+        """
+        try:
+            # 获取相关信息
+            product_name = processed_data.get("product_name", "")
+            ProductHighlights = processed_data.get("ProductHighlights", "")  # 使用新的字段名
+            # 从sections中提取目标人群和卖点信息
+            sections = processed_data.get("sections", {})
+            requirements = processed_data.get("requirements", "")  # 内容方向建议
+            notice = processed_data.get("notice", "")  # 注意事项
+            picture_number = processed_data.get("picture_number", 6)  # 图片数量，默认为6
+            outline_direction = processed_data.get("outline_direction", "")
+           
+            
+            if isinstance(sections, dict):
+                
+                blogger_style = sections.get("blogger_style", "")
+                
+            
+            # 构建系统提示词
+            prompt_template = self.prompts.get("graphic_outline", {}).get("planting_content", {})
+            
+            # 构建输入描述
+            input_description = prompt_template.get("input_description", "").format(
+                outline_direction=outline_direction,
+                ProductHighlights=ProductHighlights,
+                notice=notice,
+                picture_number=picture_number,
+                blogger_style=blogger_style,
+                requirements=requirements,
+                product_name=product_name
+            )
+            
+            # 构建技能描述
+            skill_1 = prompt_template.get("skills", {}).get("skill_1", "")
+            skill_2 = prompt_template.get("skills", {}).get("skill_2", "")
+            skill_3 = prompt_template.get("skills", {}).get("skill_3", "")
+            skill_4 = prompt_template.get("skills", {}).get("skill_4", "")
+            skill_5 = prompt_template.get("skills", {}).get("skill_5", "")
+            
+            # 构建输出格式
+            output_format = prompt_template.get("output_format", "").format(picture_number=picture_number)
+            
+            # 构建限制
+            restrictions = "\n".join(prompt_template.get("restrictions", []))
+            
+            system_prompt = f"""## 角色
+{prompt_template.get("role", "")}
+
+## 输入
+{input_description}
+
+## 产品相关信息
+- 产品名称：{product_name}
+
+### 技能
+## 技能1：
+{skill_1}
+
+## 技能2：
+{skill_2}
+
+## 技能3：生成图片规划内容
+{skill_3}
+
+## 技能4：生成图片的花字内容
+{skill_4}
+
+## 技能5：备注
+{skill_5}
+
+## 输出格式要求
+{output_format}
+
+## 限制
+{restrictions}
+"""
+
+            # 使用用户提示词或系统提示词
+            prompt = user_prompt if user_prompt else system_prompt
+            
+            # 调用模型时添加response_format参数，要求JSON格式输出
+            planting_content = await self.model_manager.call_model(
+                "_generate_planting_content", 
+                prompt, 
+                response_format={"type": "json_object"}
+            )
             return planting_content
             
         except Exception as e:
@@ -1285,94 +1269,88 @@ XX（图片的文字内容）
             生成的测评类图文规划内容
         """
         try:
-            # 获取相关信息
+             # 获取相关信息
             product_name = processed_data.get("product_name", "")
-            product_highlights = processed_data.get("product_highlights", "")
-            blogger_style = processed_data.get("note_style", "")
-            selling_points = ""
-            product_category = ""
-            requirements = processed_data.get("requirements", "")
-            notice = ""  # 注意事项
-            content_requirement = ""  # 内容方向建议
-            picture_number = 6  # 默认图片数量
-            
-            # 从sections中提取信息
+            ProductHighlights = processed_data.get("ProductHighlights", "")  # 使用新的字段名
+            # 从sections中提取目标人群和卖点信息
             sections = processed_data.get("sections", {})
+            requirements = processed_data.get("requirements", "")  # 内용方向建议
+            notice = processed_data.get("notice", "")  # 注意事项
+            picture_number = processed_data.get("picture_number", 6)  # 图片数量，默认为6
+            outline_direction = processed_data.get("outline_direction", "")
+           
             
             if isinstance(sections, dict):
-                selling_points = sections.get("selling_points", "")
-                product_category = sections.get("product_category", "")
-                notice = sections.get("notice", "")
-                content_requirement = sections.get("required_content", "")
-                # 如果有指定图片数量，使用指定数量
-                picture_number_str = sections.get("picture_number")
-                if picture_number_str is not None:
-                    try:
-                        picture_number = int(picture_number_str)
-                    except (ValueError, TypeError):
-                        picture_number = 10
-                else:
-                    picture_number = 10
+                
+                blogger_style = sections.get("blogger_style", "")
             
             # 构建系统提示词
-            system_prompt = f"""# 角色
-你是小红书图文规划架构师，擅长生成适用于小红书的图文规划大纲，涵盖选购攻略、深度测评、横向对比三种类型内容。你能够将核心信息点合理拆分到图片中，形成相互关联且连贯的图片逻辑，创作纯文字的笔记。
+            prompt_template = self.prompts.get("graphic_outline", {}).get("planting_content_cp", {})
+            
+            # 构建输入描述
+            input_description = prompt_template.get("input_description", "").format(
+                notice=notice,
+                outline_direction=outline_direction,
+                ProductHighlights=ProductHighlights,
+                blogger_style=blogger_style,
+                product_name=product_name,
+                picture_number=picture_number,
+                requirements=requirements
+            )
+            
+            # 构建必备技能
+            required_skills = prompt_template.get("required_skills", "")
+            
+            # 构建技能描述
+            skill_1 = prompt_template.get("skills", {}).get("skill_1", "")
+            skill_2 = prompt_template.get("skills", {}).get("skill_2", "")
+            skill_3 = prompt_template.get("skills", {}).get("skill_3", "")
+            
+            # 构建输出格式
+            output_format = prompt_template.get("output_format", "").format(picture_number=picture_number)
+            
+            # 构建限制
+            restrictions = "\n".join(prompt_template.get("restrictions", []))
+            
+            system_prompt = f"""## 角色
+{prompt_template.get("role", "")}
 
-## 产品背景信息
-- 产品名称：{product_name}
-- 产品品类：{product_category}
-- 卖点：{selling_points}
+## 输入
+{input_description}
+
+## 产品相关信息
+【 产品名称】：{product_name}
+【卖点信息】：{ProductHighlights}
+
+## 必备技能
+{required_skills}
 
 ## 技能
-1. 理解注意事项{notice}、内容方向建议{content_requirement}，将以上两个信息都考虑在内，其中注意事项为第一优先级，生成一份整合后的创作方向。
+### 技能1：
+{skill_1}
 
-2. 规划图文结构
-结合整合后的创作方向、产品品类、产品背景信息，写出{picture_number}张图片的规划 ，规划每张图的类型及其用途。  
-常见图片类型与适配策略示例：
-- **大字报图**：突出观点/标题，常用于封面图或引流使用。
-- **参数拉表型**：用于展示多品牌产品的硬件参数、功能维度，横向对比为主，表格结构清晰、信息密度高，常用于封面图或第1张图。
-- **图文混排图**：用于承载复杂信息，如展示对比逻辑、选购逻辑、评测流程、结论观点，可配图标/图形/产品图，是选购类、测评类的主要输出载体。
-- **总结推荐图**：用于综合评估与推荐建议，搭配标签或图标说明推荐理由，常用于最后一张图。
-# 测评/对比类（强调"信任感+真实性"）叙事框架
-选择最合适产品和达人风格的框架，规划图片
-* 单品深度测评
-  - 框架：外观 & 功能 → 使用场景演示 → 数据/效果反馈 → 总结推荐理由
-  - 示例：新鞋10KM实战测评
-* 硬核测评 / 实验拆解类
-  - 框架：亮出产品 → 测评维度  → 实验方法（模拟真实使用场景 or 实验室测试）  → 分维度展示测试结果  → 综合结论（选购建议）
-  - 示例：新鞋全方位硬核测评（高处扔鸡蛋测回弹缓震、湿地测抓地等）
-* 横向对比测评
-  - 框架：A产品 vs B产品（或多款竞品） → 测评维度  → 同维度实测 → 结果展示 （重复以上直到测评维度介绍完）→ 综合结论（选购建议，推荐本品）
-* 同品牌多款测评
-  - 框架：品牌背景（先介绍为什么要选购，或者本期内容的背景） → 各系列/型号横向介绍 → 适配的使用场景/人群匹配 → 选购建议 →  行动号召
-* 榜单推荐
-  - 框架：场景/需求/主题切入（马拉松跑鞋，双十一好价，300档以内XXX） → 榜单产品逐个介绍（ 合作产品重点突出，篇幅长点）→ 综合总结 → 选购建议 
-* 选购指南
-  - 框架：场景/需求/主题切入 → 常见错误认知 → 错误思路/踩坑案例 → 正确选购标准/选购维度 → 怎么选 → 推荐合适产品
-  
-3. 构建回复
-为每张图设定文字排版内容（标题、正文、图表结构、结论语等），正文信息要完整，要给出一个可以直接使用的版本，表达要口语化并带有场景化体验；提供对应的排版建议，包括信息布局、强调色块、表格可读性等。
+### 技能2：规划图文结构
+{skill_2}
 
-## 备注
-针对每张图片，列出拍摄的注意事项/补充说明
+### 技能3：生成图片规划
+{skill_3}
 
-# 输出内容及格式
-图片类型：XX
-图文规划：XX
-备注：XX
+## 输出格式要求
+{output_format}
 
-## 创作要求
-- 核心要求：{requirements}
-- 产品卖点：{selling_points}
-- 注意事项：{notice}
-- 内容方向建议：{content_requirement}
+## 限制
+{restrictions}
 """
-            
+
             # 使用用户提示词或系统提示词
             prompt = user_prompt if user_prompt else system_prompt
             
-            from models.doubao import call_doubao
-            planting_content = await call_doubao(prompt)
+            # 调用模型时添加response_format参数，要求JSON格式输出
+            planting_content = await self.model_manager.call_model(
+                "_generate_planting_content_cp", 
+                prompt, 
+                response_format={"type": "json_object"}
+            )
             return planting_content
             
         except Exception as e:
@@ -1380,6 +1358,8 @@ XX（图片的文字内容）
             return "测评图文规划生成失败"
 
 
+import re
+from typing import List, Dict, Any
 
 
 def parse_planting_content(content: str) -> List[Dict[str, str]]:
@@ -1399,57 +1379,164 @@ def parse_planting_content(content: str) -> List[Dict[str, str]]:
     if not content:
         return []
     
-    # 使用更灵活的正则表达式匹配图文规划内容
-    # 修复正则表达式以匹配实际的文本格式
-    pattern = r'图片类型：(.*?)\n图文规划：\n(.*?)\n(.*?)\n备注：(.*?)(?=\n\n图片类型：|\Z)'
+    result = []
+    
+    # 使用正则表达式匹配图片信息块
+    # 匹配模式：图片类型 + 图文规划 + 备注（可能包含排版建议）
+    pattern = r'图片类型：(.*?)\n图文规划：(.*?)\n(备注：.*?)(?=\n\n图片类型：|\Z)'
     matches = re.findall(pattern, content, re.DOTALL)
     
-    result = []
-    for match in matches:
-        image_info = {
-            "image_type": match[0].strip(),
-            "planning": match[1].strip(),
-            "caption": match[2].strip(),
-            "remark": match[3].strip()
-        }
-        result.append(image_info)
+    # 如果匹配到内容，处理每个匹配项
+    if matches:
+        for match in matches:
+            image_type = match[0].strip()
+            planning = match[1].strip()
+            remark_section = match[2].strip()
+            
+            # 从备注部分提取备注内容
+            remark = ""
+            remark_match = re.search(r'备注：(.*)', remark_section, re.DOTALL)
+            if remark_match:
+                remark = remark_match.group(1).strip()
+            
+            image_info = {
+                "image_type": image_type,
+                "planning": planning,
+                "remark": remark,
+                "caption": ""
+            }
+            result.append(image_info)
+    else:
+        # 尝试另一种模式匹配（处理包含排版建议的情况）
+        pattern2 = r'图片类型：(.*?)\n图文规划：(.*?)\n排版建议：(.*?)\n(备注：.*?)(?=\n\n图片类型：|\Z)'
+        matches2 = re.findall(pattern2, content, re.DOTALL)
+        
+        for match in matches2:
+            image_type = match[0].strip()
+            # 合并图文规划和排版建议
+            planning = match[1].strip() + "\n排版建议：" + match[2].strip()
+            remark_section = match[3].strip()
+            
+            # 从备注部分提取备注内容
+            remark = ""
+            remark_match = re.search(r'备注：(.*)', remark_section, re.DOTALL)
+            if remark_match:
+                remark = remark_match.group(1).strip()
+            
+            image_info = {
+                "image_type": image_type,
+                "planning": planning,
+                "remark": remark,
+                "caption": ""
+            }
+            result.append(image_info)
+    
+    # 如果仍然没有结果，尝试按"图片类型："分割处理
+    if not result:
+        # 按"图片类型："分割内容
+        sections = re.split(r'(\n图片类型：)', content)
+        if len(sections) > 1:
+            # 重新组合分割后的内容
+            combined_sections = []
+            for j in range(0, len(sections), 2):
+                section = sections[j] if j < len(sections) else ""
+                if j + 1 < len(sections):
+                    section += sections[j + 1]
+                    if j + 2 < len(sections):
+                        section += sections[j + 2]
+                combined_sections.append(section)
+            
+            # 处理每个部分
+            for section in combined_sections:
+                if '图片类型：' in section:
+                    # 提取图片类型
+                    type_match = re.search(r'图片类型：(.*?)(?=\n|$)', section)
+                    if type_match:
+                        image_type = type_match.group(1).strip()
+                        
+                        # 提取图文规划（可能包含排版建议）
+                        planning = ""
+                        planning_match = re.search(r'图文规划：(.*?)(?=备注：|\Z)', section, re.DOTALL)
+                        if planning_match:
+                            planning = planning_match.group(1).strip()
+                            # 检查是否还有排版建议
+                            layout_match = re.search(r'排版建议：(.*?)(?=备注：|\Z)', section, re.DOTALL)
+                            if layout_match:
+                                planning += "\n排版建议：" + layout_match.group(1).strip()
+                        
+                        # 提取备注
+                        remark = ""
+                        remark_match = re.search(r'备注：(.*?)(?=\n图片类型：|\Z)', section, re.DOTALL)
+                        if remark_match:
+                            remark = remark_match.group(1).strip()
+                        
+                        image_info = {
+                            "image_type": image_type,
+                            "planning": planning,
+                            "remark": remark,
+                            "caption": ""
+                        }
+                        result.append(image_info)
     
     return result
 
 
 def parse_planting_captions(content: str) -> Dict[str, Any]:
     """
-    解析配文内容
+    解析种草配文内容，提取标题、正文和标签
     
     Args:
-        content: 大模型返回的配文文本
+        content: 大模型返回的种草配文文本
         
     Returns:
-        解析后的配文数据
+        包含titles、body和hashtags的字典
     """
+    # 初始化返回数据
     captions_data = {
         "titles": [],
         "body": "",
         "hashtags": []
     }
     
+    # 如果内容为空，直接返回空数据
+    if not content:
+        return captions_data
+    
     # 解析标题部分
-    title_match = re.search(r'- \*\*标题\*\*：((?:\n\s*- [^\n]+)+)', content)
+    title_match = re.search(r'- \*\*标题\*\*：(.*?)(?=\n- \*\*正文|\Z)', content, re.DOTALL)
     if title_match:
         titles_text = title_match.group(1)
         titles = re.findall(r'- ([^\n]+)', titles_text)
         captions_data["titles"] = [title.strip() for title in titles]
-    
+    else:
+        # 单行标题格式
+        title_matches = re.findall(r'- \*\*标题\*\*：\s*((?:\n\s*\d+\.\s*[^\n]+)+)', content, re.DOTALL)
+        if title_matches:
+            titles = re.findall(r'\d+\.\s*([^\n]+)', title_matches[0])
+            captions_data["titles"] = [title.strip() for title in titles]
+
     # 解析正文部分
-    body_match = re.search(r'- \*\*正文\*\*：(.*?)(?=\n- \*\*标签|\Z)', content, re.DOTALL)
+    body_match = re.search(r'- \*\*正文\*\*：(.*?)(?=\n- \*\*标签|\n标签：|\Z)', content, re.DOTALL)
     if body_match:
         captions_data["body"] = body_match.group(1).strip()
-    
+    else:
+        # 尝试匹配旧格式
+        body_match = re.search(r'正文：(.*?)(?=\n标签：|\Z)', content, re.DOTALL)
+        if body_match:
+            captions_data["body"] = body_match.group(1).strip()
+
     # 解析标签部分
     hashtag_match = re.search(r'- \*\*标签\*\*：(.*?)(?=\Z)', content, re.DOTALL)
     if hashtag_match:
         hashtags_text = hashtag_match.group(1).strip()
         hashtags = re.findall(r'#\S+', hashtags_text)
         captions_data["hashtags"] = hashtags
-    
+    else:
+        # 尝试匹配旧格式
+        hashtag_match = re.search(r'标签：(.*?)(?=\Z)', content, re.DOTALL)
+        if hashtag_match:
+            hashtags_text = hashtag_match.group(1).strip()
+            hashtags = re.findall(r'#\S+', hashtags_text)
+            captions_data["hashtags"] = hashtags
+
     return captions_data

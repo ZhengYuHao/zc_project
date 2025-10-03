@@ -1,0 +1,39 @@
+{
+  "models": {
+    "default": {
+      "type": "doubao"
+    },
+    "graphic_outline": {
+      "type": "doubao"
+    },
+    "text_review": {
+      "type": "doubao"
+    },
+    "planting_content": {
+      "type": "doubao"
+    },
+     "planting_captions": {
+      "type": "doubao" 
+    },
+    "planting_captions_cp": {
+      "type": "doubao"
+    },
+    "planting_content_cp": {
+      "type": "doubao"
+    },
+    "blogger_style_analysis": {
+      "type": "doubao",
+      "model": "ep-20250520143333-8ghr9"
+    }
+  },
+  "task_model_mapping": {
+    "graphic_outline": "graphic_outline",
+    "text_review": "text_review",
+    "_generate_planting_content": "planting_content",
+    "_generate_planting_captions": "planting_captions",
+    "_generate_planting_content_cp": "planting_content_cp",
+    "_generate_planting_captions_cp": "planting_captions_cp",
+    "blogger_style_analysis": "blogger_style_analysis",
+    "default": "default"
+  }
+}

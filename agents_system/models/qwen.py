@@ -9,17 +9,28 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.settings import settings
 from utils.logger import get_logger
+from .base_model import BaseModel
 
 logger = get_logger(__name__)
 
 
-class QwenModel:
+class QwenModel(BaseModel):
     """Qwen大模型调用接口"""
     
-    def __init__(self):
-        self.api_key = settings.QWEN_API_KEY
-        self.model_name = settings.QWEN_MODEL_NAME
-        self.api_base = settings.QWEN_API_BASE
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        # 如果没有提供配置，则使用默认配置
+        if config is None:
+            config = {
+                "api_key": settings.QWEN_API_KEY,
+                "model_name": settings.QWEN_MODEL_NAME,
+                "api_base": settings.QWEN_API_BASE
+            }
+        
+        super().__init__(config)
+        
+        self.api_key = config.get("api_key") or settings.QWEN_API_KEY
+        self.model_name = config.get("model_name") or settings.QWEN_MODEL_NAME
+        self.api_base = config.get("api_base") or settings.QWEN_API_BASE
         self.client = httpx.AsyncClient()
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -54,7 +65,7 @@ class QwenModel:
         
         try:
             logger.info(f"Calling Qwen model with prompt: {prompt}...")
-            response = await self.client.post(url, headers=self.headers, json=payload, timeout=30.0)
+            response = await self.client.post(url, headers=self.headers, json=payload, timeout=300)
             response.raise_for_status()
             
             result = response.json()
@@ -94,7 +105,7 @@ class QwenModel:
         
         try:
             logger.info(f"Calling Qwen model stream with prompt: {prompt[:50]}...")
-            async with self.client.stream("POST", url, headers=self.headers, json=payload, timeout=30.0) as response:
+            async with self.client.stream("POST", url, headers=self.headers, json=payload, timeout=300) as response:
                 response.raise_for_status()
                 async for chunk in response.aiter_text():
                     if chunk.startswith("data:"):
@@ -119,9 +130,9 @@ class QwenModel:
 qwen_model: Optional[QwenModel] = None
 
 
-def get_qwen_model() -> QwenModel:
+def get_qwen_model(config: Optional[Dict[str, Any]] = None) -> QwenModel:
     """获取Qwen模型实例"""
     global qwen_model
     if qwen_model is None:
-        qwen_model = QwenModel()
+        qwen_model = QwenModel(config)
     return qwen_model

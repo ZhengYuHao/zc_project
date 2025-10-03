@@ -19,6 +19,12 @@ except ImportError:
         return "unknown"
 
 
+def setup_logger():
+    """设置日志系统"""
+    # 这里可以添加日志系统的全局配置
+    pass
+
+
 class AgentLogger:
     """统一的日志模块，包含模块名、行号、时间戳等属性"""
     
@@ -72,8 +78,14 @@ class AgentLogger:
                 formatted_message = message
             
             # 获取请求ID
-            request_id = get_request_id() if REQUEST_CONTEXT_AVAILABLE else "unknown"
-            if request_id is None:
+            try:
+                if REQUEST_CONTEXT_AVAILABLE:
+                    request_id = get_request_id()
+                    if request_id is None:
+                        request_id = "unknown"
+                else:
+                    request_id = "unknown"
+            except Exception:
                 request_id = "unknown"
             
             # 创建并处理日志记录，使用完整的参数列表消除编辑器警告
