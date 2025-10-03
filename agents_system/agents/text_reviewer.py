@@ -675,8 +675,11 @@ class TextReviewerAgent(BaseAgent):
                             # 回退到原始内容
                             corrected_cell_data = marked_cell_data
                         
-                        # 将处理后的数据按原位置写回
+                        # 使用批量写入接口一次性写回所有数据
+                        write_data = []
                         write_errors = []  # 记录写入错误
+                        
+                        # 处理模型返回的数据
                         for cell_ref, content in corrected_cell_data.items():
                             try:
                                 self.logger.info(f"准备写回单元格 {cell_ref}，内容: '{content}'")
@@ -696,97 +699,60 @@ class TextReviewerAgent(BaseAgent):
                                     cleaned_content = marked_cell_data.get(cell_ref, cell_data.get(cell_ref, ""))
                                 
                                 # 记录即将写入电子表格的数据
-                                self.logger.info(f"[写入电子表格前] 单元格: {cell_ref}, 内容: '{cleaned_content}'")
+                                self.logger.info(f"[批量写入准备] 单元格: {cell_ref}, 内容: '{cleaned_content}'")
                                 
-                                # 写回单个单元格
-                                write_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values"
-                                write_payload = {
-                                    "valueRange": {
-                                        "range": f"{sheet_id}!{cell_ref}:{cell_ref}",
-                                        "values": [[cleaned_content]]
-                                    }
-                                }
-                                
-                                write_response = await client.put(write_url, headers=headers, json=write_payload)
-                                write_response.raise_for_status()
-                                write_result = write_response.json()
-                                
-                                if write_result.get("code") != 0:
-                                    error_msg = f"写入单元格 {cell_ref} 失败: {write_result}"
-                                    self.logger.error(error_msg)
-                                    write_errors.append(error_msg)
-                                else:
-                                    self.logger.info(f"[写入电子表格成功] 单元格: {cell_ref}")
+                                # 添加到批量写入数据中
+                                write_data.append({
+                                    "range": f"{sheet_id}!{cell_ref}:{cell_ref}",
+                                    "values": [[cleaned_content]]
+                                })
                             except Exception as e:
-                                error_msg = f"写入单元格 {cell_ref} 时出错: {str(e)}"
+                                error_msg = f"处理单元格 {cell_ref} 时出错: {str(e)}"
                                 self.logger.error(error_msg)
                                 write_errors.append(error_msg)
-                                
-                                # 出错时尝试写回原始内容（标记后的）
-                                try:
-                                    original_marked_content = marked_cell_data.get(cell_ref, cell_data.get(cell_ref, ""))
-                                    self.logger.info(f"[出错回退] 单元格: {cell_ref}, 内容: '{original_marked_content}'")
-                                    
-                                    write_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values"
-                                    write_payload = {
-                                        "valueRange": {
-                                            "range": f"{sheet_id}!{cell_ref}:{cell_ref}",
-                                            "values": [[original_marked_content]]
-                                        }
-                                    }
-                                    
-                                    write_response = await client.put(write_url, headers=headers, json=write_payload)
-                                    write_response.raise_for_status()
-                                    write_result = write_response.json()
-                                    
-                                    if write_result.get("code") != 0:
-                                        fallback_error_msg = f"[出错回退] 写入单元格 {cell_ref} 失败: {write_result}"
-                                        self.logger.error(fallback_error_msg)
-                                        write_errors.append(fallback_error_msg)
-                                    else:
-                                        self.logger.info(f"[出错回退] 写入电子表格成功: {cell_ref}")
-                                except Exception as fallback_e:
-                                    fallback_error_msg = f"[出错回退] 写入单元格 {cell_ref} 时再次出错: {str(fallback_e)}"
-                                    self.logger.error(fallback_error_msg)
-                                    write_errors.append(fallback_error_msg)
                         
-                        # 对于原始数据中存在但模型返回结果中没有的单元格，写回原始内容
+                        # 处理原始数据中存在但模型返回结果中没有的单元格
                         for cell_ref in marked_cell_data.keys():
                             if cell_ref not in corrected_cell_data:
                                 try:
                                     original_marked_content = marked_cell_data.get(cell_ref, cell_data.get(cell_ref, ""))
                                     self.logger.info(f"[补充写入] 单元格: {cell_ref}, 内容: '{original_marked_content}'")
                                     
-                                    write_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values"
-                                    write_payload = {
-                                        "valueRange": {
-                                            "range": f"{sheet_id}!{cell_ref}:{cell_ref}",
-                                            "values": [[original_marked_content]]
-                                        }
-                                    }
-                                    
-                                    write_response = await client.put(write_url, headers=headers, json=write_payload)
-                                    write_response.raise_for_status()
-                                    write_result = write_response.json()
-                                    
-                                    if write_result.get("code") != 0:
-                                        error_msg = f"[补充写入] 写入单元格 {cell_ref} 失败: {write_result}"
-                                        self.logger.error(error_msg)
-                                        write_errors.append(error_msg)
-                                    else:
-                                        self.logger.info(f"[补充写入] 写入电子表格成功: {cell_ref}")
+                                    # 添加到批量写入数据中
+                                    write_data.append({
+                                        "range": f"{sheet_id}!{cell_ref}:{cell_ref}",
+                                        "values": [[original_marked_content]]
+                                    })
                                 except Exception as e:
-                                    error_msg = f"[补充写入] 写入单元格 {cell_ref} 时出错: {str(e)}"
+                                    error_msg = f"[补充写入] 处理单元格 {cell_ref} 时出错: {str(e)}"
                                     self.logger.error(error_msg)
                                     write_errors.append(error_msg)
                         
-                        # 汇总写入结果
-                        if write_errors:
-                            self.logger.warning(f"处理飞书电子表格时出现 {len(write_errors)} 个写入错误")
-                            for error in write_errors:
-                                self.logger.warning(f"写入错误: {error}")
+                        # 执行批量写入操作
+                        if write_data:
+                            try:
+                                batch_write_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values_batch_update"
+                                batch_write_payload = {
+                                    "valueRanges": write_data
+                                }
+                                
+                                self.logger.info(f"执行批量写入，共 {len(write_data)} 个单元格")
+                                batch_write_response = await client.post(batch_write_url, headers=headers, json=batch_write_payload)
+                                batch_write_response.raise_for_status()
+                                batch_write_result = batch_write_response.json()
+                                
+                                if batch_write_result.get("code") != 0:
+                                    error_msg = f"批量写入失败: {batch_write_result}"
+                                    self.logger.error(error_msg)
+                                    write_errors.append(error_msg)
+                                else:
+                                    self.logger.info(f"批量写入成功，共写入 {len(write_data)} 个单元格")
+                            except Exception as e:
+                                error_msg = f"批量写入时出错: {str(e)}"
+                                self.logger.error(error_msg)
+                                write_errors.append(error_msg)
                         else:
-                            self.logger.info("所有单元格写入成功")
+                            self.logger.warning("没有数据需要写入")
                 
                 result = {
                     "status": "success",
