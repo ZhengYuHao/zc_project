@@ -9,6 +9,7 @@ import re
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 from core.request_context import get_request_id
+from fastapi import Request
 
 # 添加项目根目录到Python路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -178,33 +179,48 @@ class GraphicOutlineAgent(BaseAgent):
                 request_id=result.get("request_id")
             )
     
-    async def process_request_api(self, request: ProcessRequestInput) -> ProcessRequestResponse:
+    async def process_request_api(self, request: Request) -> ProcessRequestResponse:
         """
         RESTful API接口，用于处理process_request请求
         
         Args:
-            request: ProcessRequest输入数据 
+            request: FastAPI Request对象 
             
         Returns:
             ProcessRequest处理结果
         """
         request_id = get_request_id()
-        self.logger.info(f"Processing process_request API request with request_id {request_id}: {request}")
+        self.logger.info(f"Processing process_request API request with request_id {request_id}")
 
         try:
+            # 直接从请求体中获取原始数据
+            import json
+            body = await request.body()
+            try:
+                request_data = json.loads(body.decode('utf-8')) if body else {}
+            except json.JSONDecodeError:
+                self.logger.error(f"Invalid JSON in request body with request_id {request_id}")
+                return ProcessRequestResponse(
+                    status="error",
+                    error="Invalid JSON format",
+                    request_id=request_id
+                )
+
+            self.logger.info(f"Processing process_request API request with request_id {request_id}: {request_data}")
+
             # 硬编码验证必填字段
             missing_fields = []
-            if not request.direction:
+            if not request_data.get("direction"):
                 missing_fields.append("direction")
-            if not request.requirements:
+            if not request_data.get("requirements"):
                 missing_fields.append("requirements")
-            if not request.product_name:
+            if not request_data.get("product_name"):
                 missing_fields.append("product_name")
-            if not request.ProductHighlights:
+            if not request_data.get("ProductHighlights"):
                 missing_fields.append("ProductHighlights")
-            if not request.outline_direction:
+            if not request_data.get("outline_direction"):
                 missing_fields.append("outline_direction")
-            if not request.blogger_link:
+            if not request_data.get("blogger_link"):
                 missing_fields.append("blogger_link")
                 
             if missing_fields:
@@ -216,18 +232,10 @@ class GraphicOutlineAgent(BaseAgent):
                     request_id=request_id
                 )
 
-            # 转换请求数据为process_request所需的格式
-            request_data = {
-                "direction": request.direction,
-                "requirements": request.requirements,
-                "product_name": request.product_name,
-                "notice": request.notice,
-                "picture_number": request.picture_number,
-                "ProductHighlights": request.ProductHighlights,
-                "outline_direction": request.outline_direction,
-                "blogger_link": request.blogger_link
-            }
-            
+            # 如果用户没有提交picture_number字段，默认设置为15张
+            if "picture_number" not in request_data:
+                request_data["picture_number"] = 15
+
             # 调用process_request方法
             result = await self.process_request(request_data)
             

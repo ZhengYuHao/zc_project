@@ -16,12 +16,10 @@
       "type": "doubao" 
     },
     "planting_captions_cp": {
-      "type": "doubao",
-      "model": "ep-20250303093520-rh94v"
+      "type": "doubao"
     },
     "planting_content_cp": {
-      "type": "doubao",
-      "model": "ep-20250303093520-rh94v"
+      "type": "doubao"
     },
     "blogger_style_analysis": {
       "type": "doubao",
