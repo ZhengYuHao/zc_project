@@ -1,6 +1,6 @@
 # Agents System
 
-一个基于 Python、FastAPI 和 Pydantic 构建的智能体集合框架，用于模块化管理和统一处理多个智能体功能。
+一个基于 Python、FastAPI 和 Pydantic 构建的企业级智能体集合框架，用于模块化管理和统一处理多个AI驱动的功能模块。
 
 ## 目录结构
 
@@ -10,7 +10,9 @@ agents_system/
 │   ├── text_reviewer.py       # 文本审稿智能体
 │   └── graphic_outline_agent.py  # 图文大纲生成智能体
 ├── config/                    # 配置文件目录
-│   └── settings.py            # 系统配置
+│   ├── settings.py            # 系统配置
+│   ├── model_config.py        # 模型配置
+│   └── model_config.json      # 模型配置文件
 ├── core/                      # 核心模块目录
 │   ├── base_agent.py          # 智能体基类
 │   ├── registry.py            # 智能体注册机制
@@ -21,7 +23,10 @@ agents_system/
 ├── models/                    # 模型实现目录
 │   ├── doubao.py              # 豆包大模型调用接口
 │   ├── feishu.py              # 飞书API客户端
-│   └── llm.py                 # 大模型调用接口
+│   ├── qwen.py                # 通义千问大模型调用接口
+│   ├── deepseek.py            # DeepSeek大模型调用接口
+│   ├── model_factory.py       # 模型工厂
+│   └── model_manager.py       # 模型管理器
 ├── utils/                     # 工具类目录
 │   ├── ac_automaton.py        # AC自动机实现
 │   ├── logger.py              # 日志模块
@@ -29,6 +34,7 @@ agents_system/
 │   ├── cell_filler.py         # 表格单元填充器
 │   ├── check_excel.py         # Excel检查工具
 │   └── analyze_excel.py       # Excel分析工具
+├── prompts/                   # 提示词模板目录
 ├── prohibited_words_output_v2/ # 违禁词库目录
 ├── main.py                    # 项目入口文件
 └── test/                      # 测试文件目录
@@ -36,21 +42,73 @@ agents_system/
 
 ## 系统架构
 
-本系统采用微服务风格的模块化架构，基于 FastAPI 构建 RESTful API，每个智能体作为独立模块注册并运行。
+本系统采用微服务风格的模块化架构，基于 FastAPI 构建高性能 RESTful API，每个智能体作为独立模块注册并运行。
 
 ### 核心组件
 
 1. **智能体系统 (Agents)**：系统的核心功能模块，每个智能体负责特定的业务逻辑
 2. **核心模块 (Core)**：提供基础服务，包括智能体注册、请求处理、上下文管理等
-3. **模型接口 (Models)**：封装外部服务调用，如大语言模型和飞书API
+3. **模型接口 (Models)**：封装多种大语言模型调用，如豆包、通义千问、DeepSeek等
 4. **工具库 (Utils)**：通用工具集合，包括日志、Excel处理、文本分析等
 5. **配置管理 (Config)**：统一配置管理，支持环境变量配置
 
 ### 设计模式
 
-- **模板方法模式**：通过 [BaseAgent](file:///E:/pyProject/zc_project/agents_system/core/base_agent.py#L12-L45) 基类定义抽象方法，具体智能体实现业务逻辑
+- **模板方法模式**：通过 [BaseAgent](file:///d:/python_codes/zc_project/agents_system/core/base_agent.py#L12-L45) 基类定义抽象方法，具体智能体实现业务逻辑
 - **插件式架构**：通过注册机制实现智能体的动态加载和管理
 - **中间件模式**：使用中间件处理请求上下文、CORS等横切关注点
+- **工厂模式**：模型工厂统一管理不同类型的模型实例
+
+## 模型动态匹配机制
+
+系统采用基于配置的动态模型匹配机制，允许根据不同任务类型使用不同的大语言模型，提高资源利用效率和处理精度。
+
+### 工作原理
+
+1. **配置驱动**：通过 [config/model_config.json](file:///d:/python_codes/zc_project/agents_system/config/model_config.json) 文件定义模型配置和任务-模型映射关系
+2. **模型工厂模式**：[ModelFactory](file:///d:/python_codes/zc_project/agents_system/models/model_factory.py#L7-L49) 类负责根据配置创建和缓存模型实例，支持灵活扩展新模型类型
+3. **模型管理器**：[ModelManager](file:///d:/python_codes/zc_project/agents_system/models/model_manager.py#L8-L83) 根据任务类型查询映射配置，获取对应模型实例，实现解耦
+4. **任务级匹配**：支持以任务为粒度配置不同模型，提升资源利用效率和处理精度
+5. **运行时绑定**：模型选择在运行时完成，增强系统灵活性和可维护性
+
+### 配置文件结构
+
+模型配置文件位于 [config/model_config.json](file:///d:/python_codes/zc_project/agents_system/config/model_config.json)，包含两个主要部分：
+
+1. **models**：定义不同模型的类型和配置参数
+2. **task_model_mapping**：定义任务类型与模型配置的映射关系
+
+示例配置：
+```json
+{
+  "models": {
+    "default": {
+      "type": "doubao"
+    },
+    "text_review": {
+      "type": "doubao"
+    },
+    "graphic_outline": {
+      "type": "doubao"
+    }
+  },
+  "task_model_mapping": {
+    "text_review": "text_review",
+    "graphic_outline": "graphic_outline",
+    "default": "default"
+  }
+}
+```
+
+### 使用流程
+
+1. 智能体调用 [ModelManager.call_model](file:///d:/python_codes/zc_project/agents_system/models/model_manager.py#L65-L71) 方法，传入任务类型和提示词
+2. [call_model](file:///d:/python_codes/zc_project/agents_system/models/model_manager.py#L65-L71) 方法通过 [get_model_for_task](file:///d:/python_codes/zc_project/agents_system/models/model_manager.py#L43-L63) 获取对应任务的模型实例
+3. [get_model_for_task](file:///d:/python_codes/zc_project/agents_system/models/model_manager.py#L43-L63) 根据 [task_model_mapping](file:///d:/python_codes/zc_project/agents_system/config/model_config.json#L24-L35) 查找任务对应的模型配置
+4. 根据模型配置中的类型信息，通过 [ModelFactory](file:///d:/python_codes/zc_project/agents_system/models/model_factory.py#L7-L49) 创建或获取模型实例
+5. 调用模型实例的 [generate_text](file:///d:/python_codes/zc_project/agents_system/models/base_model.py#L11-L13) 方法生成文本
+
+这种方式避免了硬编码，使得模型配置更加灵活，可以在不修改代码的情况下调整不同任务使用的模型。
 
 ## 智能体介绍
 
@@ -78,6 +136,7 @@ agents_system/
 - 调用大模型生成图文内容大纲
 - 创建飞书电子表格
 - 将大纲数据填充到电子表格中
+- 支持用户昵称获取和博主链接分析
 
 #### API接口：
 - `POST /graphic_outline/generate` - 生成图文大纲
@@ -105,11 +164,18 @@ PROJECT_NAME=Agents System
 PROJECT_VERSION=1.0.0
 DEBUG=True
 HOST=0.0.0.0
-PORT=8000
+PORT=8847
 
 # 豆包大模型配置
 DOUBAO_API_KEY=your_doubao_api_key
 DOUBAO_MODEL_NAME=your_doubao_model_name
+
+# 通义千问大模型配置
+QWEN_API_KEY=your_qwen_api_key
+QWEN_MODEL_NAME=qwen-plus
+
+# DeepSeek大模型配置
+DEEPSEEK_API_KEY=your_deepseek_api_key
 
 # 飞书配置
 FEISHU_APP_ID=your_feishu_app_id
@@ -125,8 +191,9 @@ LOG_FILE=logs/agents_system.log
 GRAPHIC_OUTLINE_DEFAULT_STYLE=标准
 GRAPHIC_OUTLINE_LLM_MODEL=doubao
 GRAPHIC_OUTLINE_MAX_RETRIES=3
-GRAPHIC_OUTLINE_TIMEOUT=30
+GRAPHIC_OUTLINE_TIMEOUT=60
 GRAPHIC_OUTLINE_TEMPLATE_SPREADSHEET_TOKEN=your_template_spreadsheet_token
+GRAPHIC_OUTLINE_TEMPLATE_FOLDER_TOKEN=your_template_folder_token
 ```
 
 ## 部署方式
@@ -154,14 +221,14 @@ docker-compose up -d
 
 系统使用 FastAPI 构建，自带交互式 API 文档：
 
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
+- Swagger UI: `http://localhost:8847/docs`
+- ReDoc: `http://localhost:8847/redoc`
 
 ## 技术栈
 
 - **语言**: Python 3.13
 - **Web框架**: FastAPI
-- **数据验证**: Pydantic
+- **数据验证**: Pydantic v2
 - **异步HTTP客户端**: httpx
 - **容器化**: Docker
 - **API文档**: Swagger UI / ReDoc
@@ -175,14 +242,165 @@ docker-compose up -d
 - 请求ID追踪便于调试和监控
 - 日志记录包含异常堆栈信息
 
-## 扩展性
+## 扩展新智能体指南
 
-系统采用模块化设计，可以轻松添加新的智能体：
+系统采用模块化设计，可以轻松添加新的智能体功能。以下是添加新智能体的详细步骤：
 
-1. 继承 [BaseAgent](file:///E:/pyProject/zc_project/agents_system/core/base_agent.py#L12-L45) 基类
-2. 实现抽象方法
-3. 在 [main.py](file:///E:/pyProject/zc_project/agents_system/main.py) 中注册智能体
-4. 添加对应路由和业务逻辑
+### 1. 创建新的智能体类
+
+在 [agents](file:///d:/python_codes/zc_project/agents_system/agents/) 目录下创建一个新的智能体类文件，继承自 [BaseAgent](file:///d:/python_codes/zc_project/agents_system/core/base_agent.py#L12-L45) 基类：
+
+```python
+from core.base_agent import BaseAgent
+from models.model_manager import ModelManager
+
+class NewFeatureAgent(BaseAgent):
+    """新功能智能体的描述"""
+    
+    def __init__(self, model_manager: ModelManager):
+        # 调用父类构造函数，设置智能体名称和路由前缀
+        super().__init__("new_feature")
+        self.model_manager = model_manager
+        
+        # 添加特定的路由
+        self.router.post("/process", response_model=dict)(self.process_request)
+    
+    async def process(self, input_data: dict) -> dict:
+        """
+        处理输入数据的核心方法
+        
+        Args:
+            input_data: 输入数据
+            
+        Returns:
+            处理结果
+        """
+        return await self.process_request(input_data)
+    
+    async def process_request(self, request: dict) -> dict:
+        """
+        处理新功能请求
+        
+        Args:
+            request: 请求数据
+            
+        Returns:
+            处理结果
+        """
+        # 实现具体业务逻辑
+        # 可以调用模型管理器来使用大语言模型
+        result = await self.model_manager.call_model("new_feature_task", "提示词")
+        return {
+            "status": "success",
+            "result": result
+        }
+```
+
+### 2. 在模型配置中添加任务映射
+
+如果新智能体需要使用大语言模型，需要在 [config/model_config.json](file:///d:/python_codes/zc_project/agents_system/config/model_config.json) 文件中添加相应的模型配置和任务映射：
+
+```json
+{
+  "models": {
+    // ... existing models ...
+    "new_feature_model": {
+      "type": "doubao"
+    }
+  },
+  "task_model_mapping": {
+    // ... existing mappings ...
+    "new_feature_task": "new_feature_model"
+  }
+}
+```
+
+### 3. 注册智能体
+
+在 [main.py](file:///d:/python_codes/zc_project/agents_system/main.py) 文件中导入并注册新的智能体：
+
+```python
+# 导入新的智能体
+from agents.new_feature_agent import NewFeatureAgent
+
+# 在创建应用实例后添加
+# 创建模型管理器实例
+model_manager = ModelManager(config)
+
+# 创建并注册新的智能体
+new_feature_agent = NewFeatureAgent(model_manager)
+app.include_router(new_feature_agent.router)
+```
+
+### 4. 添加数据模型（可选）
+
+如果需要特定的输入/输出数据模型，可以在智能体文件中定义 Pydantic 模型：
+
+```python
+from pydantic import BaseModel
+from typing import Optional
+
+class NewFeatureRequest(BaseModel):
+    input_text: str
+    option: Optional[str] = None
+
+class NewFeatureResponse(BaseModel):
+    status: str
+    result: str
+    request_id: Optional[str] = None
+```
+
+然后在智能体类中使用这些模型：
+
+```python
+async def process(self, input_data: NewFeatureRequest) -> NewFeatureResponse:
+    # 处理逻辑
+    pass
+
+# 在路由中使用
+self.router.post("/process", response_model=NewFeatureResponse)(self.process_request)
+```
+
+### 5. 添加工具类（可选）
+
+如果新智能体需要特定的工具类，可以在 [utils](file:///d:/python_codes/zc_project/agents_system/utils/) 目录下创建相应的工具模块，并在智能体中使用。
+
+### 6. 添加测试（推荐）
+
+在 [test](file:///d:/python_codes/zc_project/agents_system/test/) 目录下为新智能体添加单元测试，确保功能正确性：
+
+```python
+import pytest
+from agents.new_feature_agent import NewFeatureAgent
+
+def test_new_feature_agent():
+    # 创建测试实例
+    agent = NewFeatureAgent(model_manager)
+    
+    # 测试具体功能
+    # ...
+```
+
+### 7. 更新文档
+
+更新 [README.md](file:///d:/python_codes/zc_project/README.md) 文件，在智能体介绍部分添加新功能的说明：
+
+```markdown
+### 3. 新功能智能体 (new_feature)
+
+用于实现新功能的描述。
+
+#### 主要功能：
+- 功能点1
+- 功能点2
+
+#### API接口：
+- `POST /new_feature/process` - 处理新功能请求
+```
+
+### 8. 配置环境变量（如果需要）
+
+如果新智能体需要额外的环境变量配置，在 [settings.py](file:///d:/python_codes/zc_project/agents_system/config/settings.py) 中添加相应的配置项，并在 [.env](file:///d:/python_codes/zc_project/.env) 示例文件和文档中更新。
 
 ## 日志与监控
 
