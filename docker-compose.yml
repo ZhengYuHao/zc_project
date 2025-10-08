@@ -1,10 +1,12 @@
-
 services:
   agents-system:
     build: .
     ports:
       - "8847:8847"
     volumes:
+      # 源代码卷映射，实现开发时代码热更新
+      - ./agents_system:/app
+      # 日志和数据持久化
       - /home/agent/zc_jxnu_agents/docker_model_log:/app/logs
       - ./data:/app/data
     environment:
