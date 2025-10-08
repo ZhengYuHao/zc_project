@@ -21,7 +21,7 @@ from config.settings import settings
 from utils.logger import get_logger
 from utils.cell_filler import CellFiller
 from utils.fetch_user_nickname import fetch_user_nickname
-from agents_system.core.task_processor import task_processor
+from core.task_processor import task_processor
 from core.request_context import get_request_id
 
 
