@@ -9,15 +9,10 @@ services:
       # 日志和数据持久化
       - /home/agent/zc_jxnu_agents/docker_model_log:/app/logs
       - ./data:/app/data
-      # 时区信息映射，确保容器内时区与宿主机一致
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
     environment:
       - DOUBAO_API_KEY=${DOUBAO_API_KEY}
       - FEISHU_APP_ID=${FEISHU_APP_ID}
       - FEISHU_APP_SECRET=${FEISHU_APP_SECRET}
       - DOUBAO_MODEL_NAME=${DOUBAO_MODEL_NAME}
-      # 设置时区环境变量
-      - TZ=Asia/Shanghai
     env_file:
       - .env
