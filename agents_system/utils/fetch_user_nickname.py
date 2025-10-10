@@ -27,7 +27,7 @@ async def fetch_user_nickname(user_uuid: str) -> Optional[str]:
         return None
         
     try:
-        api_url = f"https://zongsing.com/prod-api/platform/agent/homepage/getMostOrdersUsersByUserId/{user_uuid}"
+        api_url = f"https://zongsing.com/prod-api/platform/agent/homepage/getXhsUserBasicData/{user_uuid}"
         async with httpx.AsyncClient() as client:
             response = await client.get(api_url)
             if response.status_code == 200:
