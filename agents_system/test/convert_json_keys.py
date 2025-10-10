@@ -43,7 +43,7 @@ def convert_column_keys_to_variable_names(data):
         # "K": "name"
         #视频脚本
         "row": 1,
-        "D": "product_name",
+        "D": "brand_name",
         "E": "ProductHighlights",
         "F": "direction",
         "G": "xhs_link",
