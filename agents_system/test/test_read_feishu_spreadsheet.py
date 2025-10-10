@@ -499,7 +499,7 @@ async def main():
     主函数 - 读取飞书电子表格并生成POST请求JSON
     """
     # 示例URL，包含特定的工作表ID
-    spreadsheet_url = "https://dkke3lyh7o.feishu.cn/sheets/TzHesTaSqhFpJwttU2ucH8QjnKb?sheet=0b30c3"
+    spreadsheet_url = "https://dkke3lyh7o.feishu.cn/sheets/TzHesTaSqhFpJwttU2ucH8QjnKb?sheet=85q1XJ"
     
     print("开始读取飞书电子表格...")
     

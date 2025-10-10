@@ -21,10 +21,10 @@
     "planting_content_cp": {
       "type": "doubao"
     },
-    "blogger_style_analysis": {
-      "type": "doubao",
-      "model": "ep-20250520143333-8ghr9"
-    }
+      "blogger_style_analysis": {
+        "type": "doubao",
+        "model": "ep-20250520143333-8ghr9"
+      }
   },
   "task_model_mapping": {
     "graphic_outline": "graphic_outline",

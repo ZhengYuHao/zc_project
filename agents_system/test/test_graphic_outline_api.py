@@ -301,7 +301,7 @@ def main():
     """
     # 配置参数
     # #视频大纲
-    # api_url = "http://124.221.155.224:8857/api/video-outline-create"
+    # api_url = "http://124.221.155.224:8843/api/video-outline-create"
     # #视频脚本
     api_url = "http://124.221.155.224:8844/api/video-demo-create"
     # #图文大纲

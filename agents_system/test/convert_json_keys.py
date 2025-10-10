@@ -61,10 +61,10 @@ def convert_column_keys_to_variable_names(data):
             if key == "row":
                 converted_key = key
             # 如果是列字母键，替换为英文变量名
-            elif key in column_mapping:
+            if key in column_mapping:
                 converted_key = column_mapping[key]
             # 处理带数字后缀的键（如D1, E1等）
-            elif key[:-1] in column_mapping:  # 检查去掉最后一个字符后是否在映射中
+            elif len(key) > 1 and key[:-1] in column_mapping and key[-1].isdigit():  # 检查去掉最后一个字符后是否在映射中，且最后一个字符是数字
                 converted_key = column_mapping[key[:-1]]
             else:
                 converted_key = key
@@ -116,61 +116,38 @@ def process_json_file(input_file_path, output_file_path=None):
 
 def main():
     """
-    主函数 - 示例用法
+    主函数 - 转换JSON数据中的键
     """
-    # 如果存在实际的JSON文件，处理它
-    input_file = "spreadsheet_post_data_视频脚本创作.json"
-    # 查找文件的可能路径
-    possible_paths = [
-        input_file,  # 当前目录
-        os.path.join("..", input_file),  # 上级目录
-        os.path.join("..", "..", input_file),  # 上上级目录
-        os.path.join("e:\\pyProject\\zc_project", input_file)  # 项目根目录
-    ]
+    # 输入和输出文件名
+    input_filename = "spreadsheet_post_data_视频脚本创作.json"
+    output_filename = "spreadsheet_post_data_视频脚本创作_converted.json"
     
-    file_found = False
-    for path in possible_paths:
-        if os.path.exists(path):
-            try:
-                print(f"找到文件: {path}")
-                process_json_file(path)
-                file_found = True
-                break
-            except Exception as e:
-                print(f"处理文件 {path} 时出错: {e}")
+    # 检查输入文件是否存在
+    if not os.path.exists(input_filename):
+        print(f"错误: 文件 {input_filename} 不存在")
+        return
     
-    if not file_found:
-        print(f"文件 {input_file} 不存在，使用示例数据演示:")
-        # 示例数据
-        sample_data = [
-            {
-                "row": 2,
-                "D": "示例产品",
-                "E": "产品亮点内容",
-                "F": "创作方向",
-                "G": "https://example.com/blogger",
-                "H": "内容要求",
-                "I": "备注信息",
-                "J": "大纲方向",
-                "K": "5"
-            },
-            {
-                "row": 3,
-                "D": "另一个产品",
-                "E": "另一个产品亮点",
-                "F": "另一个创作方向",
-                "G": "https://example.com/another_blogger",
-                "H": "另一个内容要求",
-                "I": "另一个备注",
-                "J": "另一个大纲方向",
-                "K": "3"
-            }
-        ]
+    try:
+        # 加载JSON数据
+        print(f"正在加载 {input_filename}...")
+        with open(input_filename, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        print(f"成功加载数据")
         
-        # 转换示例数据
-        converted_sample = convert_column_keys_to_variable_names(sample_data)
-        print("示例数据转换结果:")
-        print(json.dumps(converted_sample, ensure_ascii=False, indent=2))
+        # 转换键名
+        print("正在转换键名...")
+        converted_data = convert_column_keys_to_variable_names(data)
+        
+        # 保存转换后的数据
+        print(f"正在保存到 {output_filename}...")
+        with open(output_filename, 'w', encoding='utf-8') as f:
+            json.dump(converted_data, f, ensure_ascii=False, indent=2)
+        print("转换完成!")
+        
+    except Exception as e:
+        print(f"处理过程中出现错误: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 if __name__ == "__main__":
