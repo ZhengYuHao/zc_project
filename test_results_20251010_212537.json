@@ -1,12 +1,12 @@
 {
-  "test_run_time": "2025-10-10T17:41:28.899786",
-  "total_requests": 21,
+  "test_run_time": "2025-10-10T21:26:46.979402",
+  "total_requests": 1,
   "results": [
     {
-      "index": 16,
-      "request_id": "316abbd9-448a-4b4d-ad2e-c33b9fc694a9",
-      "send_time": "2025-10-10T17:39:29.095464",
-      "response_time": "2025-10-10T17:41:13.023431",
+      "index": 0,
+      "request_id": "fbb91a33-b46c-4c83-870a-c860f1151629",
+      "send_time": "2025-10-10T21:25:37.879246",
+      "response_time": "2025-10-10T21:26:46.978757",
       "request_data": {
         "1": 17,
         "brand_name": "九牧丝雨花洒星幕PRO（九牧星幕PRO）",
@@ -19,33 +19,31 @@
       },
       "response_status": 200,
       "response_headers": {
-        "Date": "Fri, 10 Oct 2025 09:40:26 GMT",
+        "Date": "Fri, 10 Oct 2025 13:25:37 GMT",
         "Server": "uvicorn",
-        "Content-Length": "1482",
+        "Content-Length": "1663",
         "Content-Type": "application/json"
       },
       "response_data": {
         "success": true,
         "data": {
-          "status": "success",
-          "spreadsheet_token": "R04psef5ShiAILte80FcAnlAnNf",
-          "spreadsheet_url": null,
-          "message": "内容策略已生成并保存到飞书表格",
-          "style_type": "测评类",
-          "final_direction": "单品测评",
+          "status": "error",
+          "spreadsheet_token": "B0t6sAfj9hANyStcMc1cqXNDnwh",
+          "message": "内容策略生成成功，但飞书保存失败: 处理失败: ",
+          "final_strategy": null,
+          "video_script": {
+            "text": "🛁 每天下班最期待的就是冲个热水澡，但老房子的花洒总是忽冷忽热，小浴室瓶罐堆得像杂货铺…谁懂这种痛？！😫💡 作为改造过3套小户型的「空间魔术师」，这次终于找到完美解决方案——九牧丝雨青春款花洒！分体设计简直是老破小救星🌟 不用砸墙改管道，吊顶再低也能装，垂直空间瞬间省出1㎡！🚿 3档出水模式太懂我了！柔雾档像春雨打在身上☔️，增压档冲掉运动后疲惫💪，还有专门给娃洗澡的温和模式～数显屏实时控温，再也不会被突然的热水烫到跳脚啦！🧼 最惊喜的是无极轨道调节！老公180cm不用弯腰，宝宝踩小板凳也能自己开关，全家共用超和谐～硅胶出水孔轻轻一捏就除垢，懒人狂喜！✨ 现在每天洗澡都像在做SPA，小户型也能拥有精致沐浴时光～正在装修或改造浴室的姐妹，答应我一定要看看它！#九牧丝雨 #小户型浴室改造 #恒温花洒推荐 #浴室好物",
+            "label": "#九牧丝雨 #小户型浴室改造 #恒温花洒推荐 #浴室好物"
+          },
           "resource_type": "online",
           "timing": {
-            "total_seconds": 46.33,
-            "breakdown": {
-              "ppt_extraction": 7.152557373046875e-07,
-              "outline_extraction": 0.0,
-              "influencer_extraction": 0.03890395164489746,
-              "parallel_processing": 10.58177638053894,
-              "processor_processing": 22.93070077896118,
-              "video_script_processing": 10.016420364379883,
-              "feishu_processing": 2.7584517002105713
-            },
-            "visualization": "运行时间可视化 (单位: 秒):\nprocessor_processing: 22.93s | ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■\nparallel_processing: 10.58s | ■■■■■■■■■■■■■□□□□□□□□□□□□□□□□□\nvideo_script_processing: 10.02s | ■■■■■■■■■■■■■□□□□□□□□□□□□□□□□□\nfeishu_processing: 2.76s | ■■■□□□□□□□□□□□□□□□□□□□□□□□□□□□\ninfluencer_extraction: 0.04s | □□□□□□□□□□□□□□□□□□□□□□□□□□□□□□\nppt_extraction: 0.00s | □□□□□□□□□□□□□□□□□□□□□□□□□□□□□□\noutline_extraction: 0.00s | □□□□□□□□□□□□□□□□□□□□□□□□□□□□□□"
+            "ppt_extraction": 7.152557373046875e-07,
+            "outline_extraction": 4.76837158203125e-07,
+            "influencer_extraction": 4.348712682723999,
+            "parallel_processing": 12.200907230377197,
+            "processor_processing": 26.747703075408936,
+            "video_script_processing": 8.888869285583496,
+            "feishu_processing": 16.536483764648438
           }
         }
       }

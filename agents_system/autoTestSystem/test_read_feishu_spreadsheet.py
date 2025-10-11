@@ -49,13 +49,14 @@ def extract_spreadsheet_info(url: str) -> tuple:
 # 此处已将函数移动至上方，此处删除原位置的重复定义
 
 
-async def read_feishu_spreadsheet(spreadsheet_url_or_token: str, specified_sheet_id: str = None) -> tuple:
+async def read_feishu_spreadsheet(spreadsheet_url_or_token: str, specified_sheet_id: str = None, column_range: str = None) -> tuple:
     """
     读取飞书电子表格数据，并按单元格位置收集信息
     
     Args:
         spreadsheet_url_or_token: 电子表格URL或token
         specified_sheet_id: 指定的工作表ID（可选）
+        column_range: 指定的列范围，如"A"表示只读取A列，"A:K"表示读取A到K列（可选）
         
     Returns:
         (单元格数据字典, 工作表标题) 元组
@@ -99,97 +100,125 @@ async def read_feishu_spreadsheet(spreadsheet_url_or_token: str, specified_sheet
             
             # 获取工作表信息
             sheets = meta_result.get("data", {}).get("sheets", [])
+            sheet_title = "Unknown"
+            actual_sheet_id = target_sheet_id
             
-            # 如果指定了sheet_id，则查找对应的工作表；否则使用第一个工作表
-            target_sheet = None
-            if target_sheet_id:
-                for sheet in sheets:
-                    # 检查多种可能的sheet_id字段
-                    sheet_ids = [
-                        sheet.get("sheetId"),
-                        sheet.get("sheet_id"),
-                        sheet.get("index")
-                    ]
-                    if target_sheet_id in sheet_ids:
-                        target_sheet = sheet
-                        break
-                
-                if not target_sheet:
-                    print(f"Warning: Specified sheet_id '{target_sheet_id}' not found, using first sheet")
-                    target_sheet = sheets[0] if sheets else None
+            # 如果没有指定sheet_id，使用第一个工作表
+            if not actual_sheet_id and sheets:
+                actual_sheet_id = sheets[0].get("sheetId")
+                sheet_title = sheets[0].get("title", "Unknown")
             else:
-                # 使用第一个工作表
-                target_sheet = sheets[0] if sheets else None
-            
-            if not target_sheet:
-                raise Exception("No sheets found in spreadsheet")
-            
-            # 获取实际的sheet_id用于API调用
-            actual_sheet_id = target_sheet.get("sheetId") or target_sheet.get("sheet_id") or target_sheet.get("index", "0")
-            sheet_title = target_sheet.get("title", "Unknown")
+                # 查找指定sheet_id对应的工作表标题
+                for sheet in sheets:
+                    if sheet.get("sheetId") == actual_sheet_id:
+                        sheet_title = sheet.get("title", "Unknown")
+                        break
             
             print(f"Using sheet: {sheet_title} (ID: {actual_sheet_id})")
             
-            # 读取电子表格内容，扩大读取范围以确保能读取到所有需要的列
-            read_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values_batch_get"
-            read_params = {
-                "ranges": [f"{actual_sheet_id}!A1:Z1000"]  # 读取较大范围的数据，确保包含D到K列
-            }
+            # 构造读取范围
+            range_str = ""
+            if column_range:
+                # 如果指定了列范围，则使用该范围
+                range_str = f"{actual_sheet_id}!{column_range}"
+            else:
+                # 如果没有指定列范围，则读取整个工作表
+                range_str = f"{actual_sheet_id}!A1:Z1000"
             
-            read_response = await client.get(read_url, headers=headers, params=read_params)
+            # 读取电子表格内容
+            read_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values/{range_str}"
+            read_response = await client.get(read_url, headers=headers)
             read_response.raise_for_status()
             read_result = read_response.json()
             
             if read_result.get("code") != 0:
                 raise Exception(f"Failed to read spreadsheet data: {read_result}")
             
-            # 提取文本内容及其单元格位置
+            # 解析数据
             value_ranges = read_result.get("data", {}).get("valueRanges", [])
-            cell_data = {}  # 存储单元格数据 { "A1": "内容", "B1": "内容", ...}
+            cell_data = {}
             
             if value_ranges:
-                values = value_ranges[0].get("values", [])
-                print(f"读取到 {len(values)} 行数据")
+                value_range = value_ranges[0]
+                range_info = value_range.get("range", "")
+                values = value_range.get("values", [])
                 
-                # 遍历所有行和列，确保不遗漏任何数据
-                for row_index, row in enumerate(values):
-                    # 确保row是一个列表
-                    if isinstance(row, list):
-                        for col_index, cell in enumerate(row):
-                            # 检查单元格是否包含数据
-                            if cell is not None:
-                                # 将行列索引转换为单元格引用 (如 0,0 -> A1)
-                                cell_ref = _index_to_cell_ref(col_index, row_index)
-                                
-                                # 处理不同类型的单元格值
-                                cell_value = ""
-                                if isinstance(cell, str) and cell.strip():
-                                    cell_value = cell.strip()
-                                elif isinstance(cell, (int, float)):
-                                    cell_value = str(cell)
-                                elif cell:  # 其他非空值
-                                    cell_value = str(cell)
-                                
-                                # 特别处理E、G、I、K列的数据
-                                col_letter = _index_to_column_letter(col_index)
-                                if col_letter == 'E':
-                                    # E列使用专用函数提取纯文本内容
-                                    cell_data[cell_ref] = extract_text_from_content(cell_value)
-                                elif col_letter == 'G':
-                                    # G列使用专用函数提取链接
-                                    cell_data[cell_ref] = extract_link_from_g_column(cell_value)
-                                elif col_letter == 'I':
-                                    # I列使用文本提取函数提取纯文本内容
-                                    cell_data[cell_ref] = extract_text_from_content(cell_value)
-                                elif col_letter == 'K':
-                                    # K列使用文本提取函数提取纯文本内容
-                                    cell_data[cell_ref] = extract_text_from_content(cell_value)
-                                else:
-                                    cell_data[cell_ref] = cell_value
-                                
-                                # 特别关注D到K列的数据
-                                if col_letter in ['D', 'E', 'F', 'G', 'H', 'I', 'J', 'K'] and cell:
-                                    print(f"  发现{col_letter}列数据 ({cell_ref}): {cell_data[cell_ref]}")
+                # 解析范围信息以确定起始行列
+                # 格式: sheetId!A1:C3 或 sheetId!A:A
+                if "!" in range_info:
+                    range_part = range_info.split("!", 1)[1]
+                    if ":" in range_part:
+                        start_cell = range_part.split(":")[0]
+                    else:
+                        start_cell = range_part
+                    
+                    # 解析起始单元格的列和行
+                    col_part = ""
+                    row_part = ""
+                    for char in start_cell:
+                        if char.isalpha():
+                            col_part += char
+                        else:
+                            row_part += char
+                    
+                    start_col_index = 0
+                    if col_part:
+                        # 将列字母转换为索引 (A=0, B=1, ...)
+                        start_col_index = 0
+                        for char in col_part:
+                            start_col_index = start_col_index * 26 + (ord(char.upper()) - ord('A') + 1)
+                        start_col_index -= 1  # 转换为0基索引
+                    
+                    start_row_index = 0
+                    if row_part:
+                        start_row_index = int(row_part) - 1  # 转换为0基索引
+                    
+                    # 将二维数组转换为单元格字典
+                    for row_idx, row in enumerate(values):
+                        for col_idx, cell_value in enumerate(row):
+                            # 计算实际的行列位置
+                            actual_row = start_row_index + row_idx + 1  # 转换为1基索引
+                            actual_col_index = start_col_index + col_idx
+                            
+                            # 将列索引转换为字母
+                            col_letter = ""
+                            temp_index = actual_col_index
+                            while temp_index >= 0:
+                                col_letter = chr(temp_index % 26 + ord('A')) + col_letter
+                                temp_index = temp_index // 26 - 1
+                            
+                            cell_ref = f"{col_letter}{actual_row}"
+                            
+                            # 处理不同类型的单元格值
+                            cell_value_processed = ""
+                            if isinstance(cell_value, str) and cell_value.strip():
+                                cell_value_processed = cell_value.strip()
+                            elif isinstance(cell_value, (int, float)):
+                                cell_value_processed = str(cell_value)
+                            elif cell_value:  # 其他非空值
+                                cell_value_processed = str(cell_value)
+                            else:
+                                cell_value_processed = ""
+                            
+                            # 特别处理E、G、I、K列的数据
+                            if col_letter == 'E':
+                                # E列使用专用函数提取纯文本内容
+                                cell_data[cell_ref] = extract_text_from_content(cell_value_processed)
+                            elif col_letter == 'G':
+                                # G列使用专用函数提取链接
+                                cell_data[cell_ref] = extract_link_from_g_column(cell_value_processed)
+                            elif col_letter == 'I':
+                                # I列使用文本提取函数提取纯文本内容
+                                cell_data[cell_ref] = extract_text_from_content(cell_value_processed)
+                            elif col_letter == 'K':
+                                # K列使用文本提取函数提取纯文本内容
+                                cell_data[cell_ref] = extract_text_from_content(cell_value_processed)
+                            else:
+                                cell_data[cell_ref] = cell_value_processed
+                            
+                            # 特别关注D到K列的数据
+                            if col_letter in ['D', 'E', 'F', 'G', 'H', 'I', 'J', 'K'] and cell_value_processed:
+                                print(f"  发现{col_letter}列数据 ({cell_ref}): {cell_data[cell_ref]}")
             
             # 显示读取到的关键列数据统计
             d_col_count = sum(1 for ref in cell_data.keys() if ref.startswith('D'))
@@ -446,6 +475,47 @@ def _index_to_cell_ref(col_index: int, row_index: int) -> str:
     return f"{col_letter}{row_number}"
 
 
+def generate_single_column_json(cell_data: dict, column_letter: str) -> list:
+    """
+    生成单列数据的JSON格式
+    
+    Args:
+        cell_data: 单元格数据字典
+        column_letter: 列字母，如"A", "B"等
+        
+    Returns:
+        包含单列数据的列表
+    """
+    column_data = []
+    
+    # 过滤出指定列的数据
+    column_cells = {k: v for k, v in cell_data.items() if k.startswith(column_letter)}
+    
+    # 按行号排序
+    sorted_cells = sorted(column_cells.items(), key=lambda x: int(''.join(filter(str.isdigit, x[0]))))
+    
+    # 提取数据
+    for cell_ref, content in sorted_cells:
+        row_number = int(''.join(filter(str.isdigit, cell_ref)))
+        # 根据列类型处理内容
+        if column_letter == 'G':
+            # G列特殊处理，提取链接
+            processed_content = extract_link_from_g_column(content)
+        elif column_letter in ['E']:
+            # E列特殊处理，提取文本
+            processed_content = extract_text_from_content(content)
+        else:
+            # 其他列直接使用内容
+            processed_content = content if content is not None else ""
+            
+        column_data.append({
+            "row": row_number,
+            column_letter: processed_content
+        })
+    
+    return column_data
+
+
 def generate_post_json(cell_data: dict) -> dict:
     """
     根据单元格数据生成POST请求的JSON（包含D到K列的数据，按行组织）
@@ -499,7 +569,7 @@ async def main():
     主函数 - 读取飞书电子表格并生成POST请求JSON
     """
     # 示例URL，包含特定的工作表ID
-    spreadsheet_url = "https://dkke3lyh7o.feishu.cn/sheets/TzHesTaSqhFpJwttU2ucH8QjnKb?sheet=iXIIrD"
+    spreadsheet_url = "https://dkke3lyh7o.feishu.cn/sheets/TzHesTaSqhFpJwttU2ucH8QjnKb?sheet=85q1XJ"
     
     print("开始读取飞书电子表格...")
     
@@ -548,6 +618,16 @@ async def main():
         with open(filename, "w", encoding="utf-8") as f:
             json.dump(post_json, f, ensure_ascii=False, indent=2)
         print(f"\n数据已保存到 {filename} 文件")
+        
+        # 演示读取单列数据的功能
+        print("\n演示读取单列数据功能...")
+        # 读取G列数据
+        g_column_data, _ = await read_feishu_spreadsheet(spreadsheet_url, column_range="G:G")
+        g_json = generate_single_column_json(g_column_data, "G")
+        print(f"读取到 {len(g_json)} 行G列数据")
+        print("前5行G列数据:")
+        for i, item in enumerate(g_json[:5]):
+            print(f"  {item}")
         
     except Exception as e:
         print(f"处理过程中出现错误: {str(e)}")

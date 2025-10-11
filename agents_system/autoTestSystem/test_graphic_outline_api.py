@@ -308,7 +308,7 @@ def main():
     # api_url = "http://124.221.155.224:8847/graphic_outline/process-request"
     
     # 查找JSON文件
-    json_file_name = "spreadsheet_post_data_视频脚本创作_converted-1.json"
+    json_file_name = "spreadsheet_post_data_视频脚本创作_converted.json"
     possible_paths = [
         json_file_name,
         os.path.join("..", json_file_name),

@@ -1,12 +1,12 @@
 {
-  "test_run_time": "2025-10-10T17:41:28.899786",
-  "total_requests": 21,
+  "test_run_time": "2025-10-10T21:28:14.118905",
+  "total_requests": 1,
   "results": [
     {
-      "index": 16,
-      "request_id": "316abbd9-448a-4b4d-ad2e-c33b9fc694a9",
-      "send_time": "2025-10-10T17:39:29.095464",
-      "response_time": "2025-10-10T17:41:13.023431",
+      "index": 0,
+      "request_id": "8ec707ca-9aa2-43d7-8792-1fbfa74b864e",
+      "send_time": "2025-10-10T21:27:17.646945",
+      "response_time": "2025-10-10T21:28:14.118090",
       "request_data": {
         "1": 17,
         "brand_name": "九牧丝雨花洒星幕PRO（九牧星幕PRO）",
@@ -19,33 +19,33 @@
       },
       "response_status": 200,
       "response_headers": {
-        "Date": "Fri, 10 Oct 2025 09:40:26 GMT",
+        "Date": "Fri, 10 Oct 2025 13:27:17 GMT",
         "Server": "uvicorn",
-        "Content-Length": "1482",
+        "Content-Length": "1496",
         "Content-Type": "application/json"
       },
       "response_data": {
         "success": true,
         "data": {
           "status": "success",
-          "spreadsheet_token": "R04psef5ShiAILte80FcAnlAnNf",
+          "spreadsheet_token": "Rt7NsmPU0hrnxEtHGIGcJTe8nmf",
           "spreadsheet_url": null,
           "message": "内容策略已生成并保存到飞书表格",
           "style_type": "测评类",
           "final_direction": "单品测评",
           "resource_type": "online",
           "timing": {
-            "total_seconds": 46.33,
+            "total_seconds": 51.96,
             "breakdown": {
               "ppt_extraction": 7.152557373046875e-07,
-              "outline_extraction": 0.0,
-              "influencer_extraction": 0.03890395164489746,
-              "parallel_processing": 10.58177638053894,
-              "processor_processing": 22.93070077896118,
-              "video_script_processing": 10.016420364379883,
-              "feishu_processing": 2.7584517002105713
+              "outline_extraction": 2.384185791015625e-07,
+              "influencer_extraction": 4.7051682472229,
+              "parallel_processing": 12.503184795379639,
+              "processor_processing": 24.742451429367065,
+              "video_script_processing": 7.104917287826538,
+              "feishu_processing": 2.9014108180999756
             },
-            "visualization": "运行时间可视化 (单位: 秒):\nprocessor_processing: 22.93s | ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■\nparallel_processing: 10.58s | ■■■■■■■■■■■■■□□□□□□□□□□□□□□□□□\nvideo_script_processing: 10.02s | ■■■■■■■■■■■■■□□□□□□□□□□□□□□□□□\nfeishu_processing: 2.76s | ■■■□□□□□□□□□□□□□□□□□□□□□□□□□□□\ninfluencer_extraction: 0.04s | □□□□□□□□□□□□□□□□□□□□□□□□□□□□□□\nppt_extraction: 0.00s | □□□□□□□□□□□□□□□□□□□□□□□□□□□□□□\noutline_extraction: 0.00s | □□□□□□□□□□□□□□□□□□□□□□□□□□□□□□"
+            "visualization": "运行时间可视化 (单位: 秒):\nprocessor_processing: 24.74s | ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■\nparallel_processing: 12.50s | ■■■■■■■■■■■■■■■□□□□□□□□□□□□□□□\nvideo_script_processing: 7.10s | ■■■■■■■■□□□□□□□□□□□□□□□□□□□□□□\ninfluencer_extraction: 4.71s | ■■■■■□□□□□□□□□□□□□□□□□□□□□□□□□\nfeishu_processing: 2.90s | ■■■□□□□□□□□□□□□□□□□□□□□□□□□□□□\nppt_extraction: 0.00s | □□□□□□□□□□□□□□□□□□□□□□□□□□□□□□\noutline_extraction: 0.00s | □□□□□□□□□□□□□□□□□□□□□□□□□□□□□□"
           }
         }
       }
