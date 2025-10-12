@@ -199,15 +199,28 @@ class GraphicOutlineAgent(BaseAgent):
             # 直接从请求体中获取原始数据
             import json
             body = await request.body()
+            request_data = {}  # 初始化request_data变量
             try:
                 request_data = json.loads(body.decode('utf-8')) if body else {}
             except json.JSONDecodeError:
                 self.logger.error(f"Invalid JSON in request body with request_id {request_id}")
-                return ProcessRequestResponse(
+                response = ProcessRequestResponse(
                     status="error",
                     error="Invalid JSON format",
                     request_id=request_id
                 )
+                
+                # 如果提供了record_link，则更新飞书多维表格记录
+                record_link = request_data.get("record_link") if request_data else None
+                if record_link:
+                    try:
+                        response_json = response.json()
+                        await process_feishu_record_cell(record_link, "图文大纲创作结果", response_json)
+                        self.logger.info(f"Successfully updated Feishu bitable record with error for record_link: {record_link}")
+                    except Exception as e:
+                        self.logger.error(f"Failed to update Feishu bitable record with error for record_link {record_link}: {str(e)}")
+                
+                return response
 
             self.logger.info(f"Processing process_request API request with request_id {request_id}: {request_data}")
 
@@ -229,11 +242,23 @@ class GraphicOutlineAgent(BaseAgent):
             if missing_fields:
                 error_msg = f"Missing required fields: {', '.join(missing_fields)}"
                 self.logger.error(f"Validation error in process_request API with request_id {request_id}: {error_msg}")
-                return ProcessRequestResponse(
+                response = ProcessRequestResponse(
                     status="error",
                     error=error_msg,
                     request_id=request_id
                 )
+                
+                # 如果提供了record_link，则更新飞书多维表格记录
+                record_link = request_data.get("record_link")
+                if record_link:
+                    try:
+                        response_json = response.json()
+                        await process_feishu_record_cell(record_link, "图文大纲创作结果", response_json)
+                        self.logger.info(f"Successfully updated Feishu bitable record with error for record_link: {record_link}")
+                    except Exception as e:
+                        self.logger.error(f"Failed to update Feishu bitable record with error for record_link {record_link}: {str(e)}")
+                
+                return response
 
             # 如果用户没有提交picture_number字段，默认设置为15张
             if "picture_number" not in request_data:
@@ -245,20 +270,44 @@ class GraphicOutlineAgent(BaseAgent):
                     if picture_number <= 0:
                         error_msg = "picture_number must be a positive integer greater than 0"
                         self.logger.error(f"Validation error in process_request API with request_id {request_id}: {error_msg}")
-                        return ProcessRequestResponse(
+                        response = ProcessRequestResponse(
                             status="error",
                             error=error_msg,
                             request_id=request_id
                         )
+                        
+                        # 如果提供了record_link，则更新飞书多维表格记录
+                        record_link = request_data.get("record_link")
+                        if record_link:
+                            try:
+                                response_json = response.json()
+                                await process_feishu_record_cell(record_link, "图文大纲创作结果", response_json)
+                                self.logger.info(f"Successfully updated Feishu bitable record with error for record_link: {record_link}")
+                            except Exception as e:
+                                self.logger.error(f"Failed to update Feishu bitable record with error for record_link {record_link}: {str(e)}")
+                        
+                        return response
                     request_data["picture_number"] = picture_number
                 except (ValueError, TypeError):
                     error_msg = "picture_number must be a valid positive integer greater than 0"
                     self.logger.error(f"Validation error in process_request API with request_id {request_id}: {error_msg}")
-                    return ProcessRequestResponse(
+                    response = ProcessRequestResponse(
                         status="error",
                         error=error_msg,
                         request_id=request_id
                     )
+                    
+                    # 如果提供了record_link，则更新飞书多维表格记录
+                    record_link = request_data.get("record_link")
+                    if record_link:
+                        try:
+                            response_json = response.json()
+                            await process_feishu_record_cell(record_link, "图文大纲创作结果", response_json)
+                            self.logger.info(f"Successfully updated Feishu bitable record with error for record_link: {record_link}")
+                        except Exception as e:
+                            self.logger.error(f"Failed to update Feishu bitable record with error for record_link {record_link}: {str(e)}")
+                    
+                    return response
             
             # 调用process_request方法
             result = await self.process_request(request_data)
@@ -277,11 +326,19 @@ class GraphicOutlineAgent(BaseAgent):
             record_link = request_data.get("record_link")
             if record_link:
                 try:
-                    # 将响应转换为JSON字符串格式
-                    response_json = response.json()
-                    # 更新飞书多维表格记录
-                    await process_feishu_record_cell(record_link, "图文大纲创作结果", response_json)
-                    self.logger.info(f"Successfully updated Feishu bitable record for record_link: {record_link}")
+                    # 只返回电子表格链接
+                    spreadsheet_info = result.get("spreadsheet", {})
+                    if spreadsheet_info and spreadsheet_info.get("status") == "success":
+                        spreadsheet_token = spreadsheet_info.get("spreadsheet_token", "")
+                        # 构造完整的电子表格URL
+                        spreadsheet_url = f"https://dkke3lyh7o.feishu.cn/sheets/{spreadsheet_token}"
+                        await process_feishu_record_cell(record_link, "图文大纲创作结果", spreadsheet_url)
+                        self.logger.info(f"Successfully updated Feishu bitable record with spreadsheet URL for record_link: {record_link}")
+                    else:
+                        # 如果没有成功创建电子表格，则返回完整响应
+                        response_json = response.json()
+                        await process_feishu_record_cell(record_link, "图文大纲创作结果", response_json)
+                        self.logger.info(f"Successfully updated Feishu bitable record with full response for record_link: {record_link}")
                 except Exception as e:
                     self.logger.error(f"Failed to update Feishu bitable record for record_link {record_link}: {str(e)}")
             
@@ -298,7 +355,7 @@ class GraphicOutlineAgent(BaseAgent):
             
             # 如果提供了record_link，则尝试更新飞书多维表格记录（即使出错也要记录）
             try:
-                record_link = request_data.get("record_link") if 'request_data' in locals() else None
+                record_link = request_data.get("record_link") if request_data else None
                 if record_link:
                     # 将错误响应转换为JSON字符串格式
                     error_response_json = error_response.json()
