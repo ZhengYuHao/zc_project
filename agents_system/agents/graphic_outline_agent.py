@@ -23,6 +23,7 @@ from utils.cell_filler import CellFiller
 from utils.fetch_user_nickname import fetch_user_nickname
 from core.task_processor import task_processor
 from core.request_context import get_request_id
+from core.feishu_bitable_processor import process_feishu_record_cell
 
 
 class GraphicOutlineRequest(BaseModel):
@@ -81,6 +82,7 @@ class ProcessRequestInput(BaseModel):
     - ProductHighlights: 产品亮点，产品的核心卖点
     - outline_direction: 大纲方向，大纲制定的具体方向
     - blogger_link: 博主链接，参考的博主主页链接
+    - record_link: 记录链接，飞书多维表格的记录链接
     """
     direction: str
     requirements: str
@@ -90,6 +92,7 @@ class ProcessRequestInput(BaseModel):
     ProductHighlights: str
     outline_direction: str
     blogger_link: str
+    record_link: Optional[str] = None
     
     class Config:
         # 确保所有必需字段都经过验证
@@ -235,7 +238,28 @@ class GraphicOutlineAgent(BaseAgent):
             # 如果用户没有提交picture_number字段，默认设置为15张
             if "picture_number" not in request_data:
                 request_data["picture_number"] = 15
-
+            else:
+                # 验证picture_number必须是非0非负的正整数
+                try:
+                    picture_number = int(request_data["picture_number"])
+                    if picture_number <= 0:
+                        error_msg = "picture_number must be a positive integer greater than 0"
+                        self.logger.error(f"Validation error in process_request API with request_id {request_id}: {error_msg}")
+                        return ProcessRequestResponse(
+                            status="error",
+                            error=error_msg,
+                            request_id=request_id
+                        )
+                    request_data["picture_number"] = picture_number
+                except (ValueError, TypeError):
+                    error_msg = "picture_number must be a valid positive integer greater than 0"
+                    self.logger.error(f"Validation error in process_request API with request_id {request_id}: {error_msg}")
+                    return ProcessRequestResponse(
+                        status="error",
+                        error=error_msg,
+                        request_id=request_id
+                    )
+            
             # 调用process_request方法
             result = await self.process_request(request_data)
             
@@ -249,16 +273,42 @@ class GraphicOutlineAgent(BaseAgent):
                 request_id=request_id
             )
             
+            # 如果提供了record_link，则更新飞书多维表格记录
+            record_link = request_data.get("record_link")
+            if record_link:
+                try:
+                    # 将响应转换为JSON字符串格式
+                    response_json = response.json()
+                    # 更新飞书多维表格记录
+                    await process_feishu_record_cell(record_link, "图文大纲创作结果", response_json)
+                    self.logger.info(f"Successfully updated Feishu bitable record for record_link: {record_link}")
+                except Exception as e:
+                    self.logger.error(f"Failed to update Feishu bitable record for record_link {record_link}: {str(e)}")
+            
             self.logger.info(f"Successfully processed process_request API request with request_id {request_id}")
             return response
             
         except Exception as e:
             self.logger.error(f"Error processing process_request API request with request_id {request_id}: {str(e)}")
-            return ProcessRequestResponse(
+            error_response = ProcessRequestResponse(
                 status="error",
                 error=str(e),
                 request_id=request_id
             )
+            
+            # 如果提供了record_link，则尝试更新飞书多维表格记录（即使出错也要记录）
+            try:
+                record_link = request_data.get("record_link") if 'request_data' in locals() else None
+                if record_link:
+                    # 将错误响应转换为JSON字符串格式
+                    error_response_json = error_response.json()
+                    # 更新飞书多维表格记录
+                    await process_feishu_record_cell(record_link, "图文大纲创作结果", error_response_json)
+                    self.logger.info(f"Successfully updated Feishu bitable record with error for record_link: {record_link}")
+            except Exception as update_error:
+                self.logger.error(f"Failed to update Feishu bitable record with error for record_link {record_link}: {str(update_error)}")
+            
+            return error_response
     
     async def process_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -279,9 +329,18 @@ class GraphicOutlineAgent(BaseAgent):
             # 并发执行七个任务
             task_results = await task_processor.execute_tasks(request)
             self.logger.info(f"task_results graphic outline request{task_results}")
+            
+            # 提取record_link（如果存在）
+            record_link = request.get("record_link", "")
+            
             # 汇总任务结果并进行下一步处理
             processed_data = await self._aggregate_and_process(task_results, request)
             self.logger.info(f"Processing graphic outline request{processed_data}")
+            
+            # 将record_link添加到processed_data中
+            if record_link:
+                processed_data["record_link"] = record_link
+                
             direction = processed_data.get("direction", "")
             # 使用正则表达式匹配方向类型
             # 匹配包含"种草"或"vlog"的内容
@@ -315,6 +374,8 @@ class GraphicOutlineAgent(BaseAgent):
             
             # 创建飞书电子表格
             blogger_link = request.get("blogger_link", "")
+            record_link = request.get("record_link", "")
+            
             # 从链接中提取userUuid（最后一部分）
             user_uuid = blogger_link.rstrip('/').split('/')[-1] if blogger_link else "默认主题"
             
@@ -326,7 +387,8 @@ class GraphicOutlineAgent(BaseAgent):
             
             spreadsheet_result = await self.create_feishu_sheet({
                 "topic": user_uuid,
-                "outline_data": processed_data
+                "outline_data": processed_data,
+                "record_link": record_link
             })
             
             result = {
@@ -611,14 +673,17 @@ class GraphicOutlineAgent(BaseAgent):
             # 从请求中提取数据
             topic = request.get("topic", "默认主题")
             outline_data = request.get("outline_data", {})
+            record_link = request.get("record_link", None)
+            
+            # 如果提供了record_link，则记录日志
+            if record_link:
+                self.logger.info(f"Received record_link: {record_link}")
             
             # 基于模板创建飞书电子表格
             spreadsheet_token, sheet_id = await self._create_spreadsheet_from_template(topic)
             
             # 填充数据到电子表格
             await self._populate_spreadsheet_data(spreadsheet_token, sheet_id, outline_data)
-            
-            
             
             # 设置电子表格权限为任何人可编辑
             self.logger.info("Setting spreadsheet permissions to anyone can edit")
@@ -635,16 +700,41 @@ class GraphicOutlineAgent(BaseAgent):
                 "request_id": request_id
             }
             
+            # 如果提供了record_link，则更新飞书多维表格记录
+            if record_link:
+                try:
+                    # 将结果转换为JSON字符串格式
+                    result_json = json.dumps(result, ensure_ascii=False)
+                    # 更新飞书多维表格记录
+                    await process_feishu_record_cell(record_link, "图文大纲创作结果", result_json)
+                    self.logger.info(f"Successfully updated Feishu bitable record for record_link: {record_link}")
+                except Exception as e:
+                    self.logger.error(f"Failed to update Feishu bitable record for record_link {record_link}: {str(e)}")
+            
             self.logger.info(f"Successfully created Feishu sheet: {spreadsheet_token}")
             return result
             
         except Exception as e:
             self.logger.error(f"Error creating Feishu sheet: {str(e)}")
-            return {
+            error_result = {
                 "status": "error",
                 "error": str(e),
                 "request_id": request_id
             }
+            
+            # 如果提供了record_link，则尝试更新飞书多维表格记录（即使出错也要记录）
+            try:
+                record_link = request.get("record_link") if 'request' in locals() else None
+                if record_link:
+                    # 将错误结果转换为JSON字符串格式
+                    error_result_json = json.dumps(error_result, ensure_ascii=False)
+                    # 更新飞书多维表格记录
+                    await process_feishu_record_cell(record_link, "图文大纲创作结果", error_result_json)
+                    self.logger.info(f"Successfully updated Feishu bitable record with error for record_link: {record_link}")
+            except Exception as update_error:
+                self.logger.error(f"Failed to update Feishu bitable record with error for record_link {record_link}: {str(update_error)}")
+            
+            return error_result
     
     async def _set_spreadsheet_public_editable(self, spreadsheet_token: str) -> bool:
         """
@@ -785,6 +875,7 @@ class GraphicOutlineAgent(BaseAgent):
             "picture_number": request_data.get("picture_number", ""),
             "ProductHighlights": request_data.get("ProductHighlights", ""),
             "outline_direction": request_data.get("outline_direction",""),
+            "record_link": request_data.get("record_link", ""),  # 添加record_link字段
             "sections": {},  # 使用字典映射方式存储
             "total_words": 0,
             "estimated_time": "5分钟"
