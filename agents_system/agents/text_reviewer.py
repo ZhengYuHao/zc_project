@@ -536,11 +536,53 @@ class TextReviewerAgent(BaseAgent):
                 
                 self.logger.info(f"Using sheet_id: {sheet_id}")
                 
-                # 读取电子表格内容
-                read_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values_batch_get"
-                read_params = {
-                    "ranges": [f"{sheet_id}!A1:Z1000"]  # 读取较大范围的数据
+                # 读取电子表格内容 - 先尝试获取维度信息，然后读取整个工作表
+                dimension_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/dimension_range"
+                dimension_params = {
+                    "sheet_id": sheet_id
                 }
+                
+                try:
+                    dimension_response = await client.get(dimension_url, headers=headers, params=dimension_params)
+                    dimension_response.raise_for_status()
+                    dimension_result = dimension_response.json()
+                    
+                    if dimension_result.get("code") != 0:
+                        # 如果获取维度信息失败，使用原来的大范围读取方式作为备选方案
+                        self.logger.warning(f"Failed to get dimension info, falling back to fixed range: {dimension_result}")
+                        read_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values_batch_get"
+                        read_params = {
+                            "ranges": [f"{sheet_id}!A1:AZ9999"]  # 扩大读取范围到AZ9999
+                        }
+                    else:
+                        # 成功获取维度信息，使用实际的工作表范围
+                        dimension_data = dimension_result.get("data", {})
+                        row_count = dimension_data.get("row_count", 1000)
+                        column_count = dimension_data.get("column_count", 52)  # 默认52列（AZ）
+                        
+                        # 将列数转换为列字母
+                        end_col = self._index_to_column_letter(column_count - 1)
+                        range_str = f"{sheet_id}!A1:{end_col}{row_count}"
+                        
+                        self.logger.info(f"Reading spreadsheet with dynamic range: {range_str}")
+                        read_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values_batch_get"
+                        read_params = {
+                            "ranges": [range_str]
+                        }
+                except httpx.HTTPStatusError as e:
+                    # HTTP错误（如404）时回退到固定范围读取
+                    self.logger.warning(f"HTTP error {e.response.status_code} when getting dimension info, falling back to fixed range")
+                    read_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values_batch_get"
+                    read_params = {
+                        "ranges": [f"{sheet_id}!A1:AZ9999"]  # 扩大读取范围到AZ9999
+                    }
+                except Exception as e:
+                    # 其他异常时也回退到固定范围读取
+                    self.logger.warning(f"Error getting dimension info, falling back to fixed range: {str(e)}")
+                    read_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values_batch_get"
+                    read_params = {
+                        "ranges": [f"{sheet_id}!A1:AZ9999"]  # 扩大读取范围到AZ9999
+                    }
                 
                 read_response = await client.get(read_url, headers=headers, params=read_params)
                 read_response.raise_for_status()
@@ -594,7 +636,13 @@ class TextReviewerAgent(BaseAgent):
                             if cell and isinstance(cell, str) and cell.strip():
                                 # 将行列索引转换为单元格引用 (如 0,0 -> A1)
                                 cell_ref = self._index_to_cell_ref(col_index, row_index)
-                                cell_data[cell_ref] = cell.strip()
+                                # 对于可能的富文本内容，提取纯文本
+                                cleaned_content = self._clean_model_response(cell.strip())
+                                cell_data[cell_ref] = cleaned_content
+                            elif cell and not isinstance(cell, str):
+                                # 处理非字符串类型数据（数字等）
+                                cell_ref = self._index_to_cell_ref(col_index, row_index)
+                                cell_data[cell_ref] = str(cell)
                     
                     if not cell_data:
                         original_text = "示例文本内容"
@@ -684,7 +732,7 @@ class TextReviewerAgent(BaseAgent):
                             try:
                                 self.logger.info(f"准备写回单元格 {cell_ref}，内容: '{content}'")
                                 
-                                # 清理处理后的文本，确保不包含提示词
+                                # 清理处理后的文本，确保不包含提示词和元数据
                                 cleaned_content = self._clean_model_response(content)
                                 self.logger.info(f"清理后的内容: '{cleaned_content}'")
                                 
@@ -716,12 +764,14 @@ class TextReviewerAgent(BaseAgent):
                             if cell_ref not in corrected_cell_data:
                                 try:
                                     original_marked_content = marked_cell_data.get(cell_ref, cell_data.get(cell_ref, ""))
-                                    self.logger.info(f"[补充写入] 单元格: {cell_ref}, 内容: '{original_marked_content}'")
+                                    # 确保写入的是纯文本内容
+                                    cleaned_content = self._clean_model_response(original_marked_content)
+                                    self.logger.info(f"[补充写入] 单元格: {cell_ref}, 内容: '{cleaned_content}'")
                                     
                                     # 添加到批量写入数据中
                                     write_data.append({
                                         "range": f"{sheet_id}!{cell_ref}:{cell_ref}",
-                                        "values": [[original_marked_content]]
+                                        "values": [[cleaned_content]]
                                     })
                                 except Exception as e:
                                     error_msg = f"[补充写入] 处理单元格 {cell_ref} 时出错: {str(e)}"
@@ -783,20 +833,34 @@ class TextReviewerAgent(BaseAgent):
         Returns:
             单元格引用 (如 A1, B2)
         """
-        # 将列索引转换为字母 (0->A, 1->B, ..., 25->Z, 26->AA, ...)
-        col_letter = ""
-        if col_index < 26:
-            col_letter = chr(ord('A') + col_index)
-        else:
-            # 处理超过Z的列 (AA, AB, ...)
-            first_letter = chr(ord('A') + col_index // 26 - 1)
-            second_letter = chr(ord('A') + col_index % 26)
-            col_letter = first_letter + second_letter
+        col_letter = self._index_to_column_letter(col_index)
         
         # 行号从1开始
         row_number = row_index + 1
         
         return f"{col_letter}{row_number}"
+    
+    def _index_to_column_letter(self, col_index: int) -> str:
+        """
+        将列索引转换为列字母 (如 0->A, 1->B, ..., 25->Z, 26->AA, ...)
+        
+        Args:
+            col_index: 列索引 (从0开始)
+            
+        Returns:
+            列字母
+        """
+        if col_index < 0:
+            raise ValueError("Column index must be non-negative")
+            
+        result = ""
+        # Excel列名转换算法：类似26进制，但没有0，A对应1
+        temp_index = col_index + 1
+        while temp_index > 0:
+            temp_index -= 1  # 转换为0基索引
+            result = chr(ord('A') + (temp_index % 26)) + result
+            temp_index //= 26
+        return result
     
     def _cell_ref_to_index(self, col_str: str) -> int:
         """
@@ -823,42 +887,54 @@ class TextReviewerAgent(BaseAgent):
         Returns:
             清理后的文本
         """
-        if not text:
-            return ""
+        if not isinstance(text, str):
+            return str(text)
+            
+        # 移除首尾空白字符
+        text = text.strip()
         
-        # 去除首尾空白字符
-        cleaned = text.strip()
-        
-        # 去除可能的引号
-        if cleaned.startswith('"') and cleaned.endswith('"'):
-            cleaned = cleaned[1:-1]
-        elif cleaned.startswith("'") and cleaned.endswith("'"):
-            cleaned = cleaned[1:-1]
-        
-        # 去除可能的JSON键值格式
-        if cleaned.startswith(":"):
-            cleaned = cleaned[1:].strip()
-        
-        # 去除可能的代码块标记
-        if cleaned.startswith("``") and cleaned.endswith("```"):
-            # 找到最后一个```
-            last_backticks = cleaned.rfind("```")
-            if last_backticks > 3:
-                cleaned = cleaned[3:last_backticks].strip()
-        
-        # 去除可能的JSON对象标记
-        if cleaned.startswith("{") and cleaned.endswith("}"):
+        # 如果看起来像JSON数组格式的富文本，尝试提取纯文本
+        if text.startswith('[{') and text.endswith('}]'):
             try:
-                # 尝试解析为JSON对象
-                json_obj = json.loads(cleaned)
-                # 如果是字符串类型，则返回该字符串
-                if isinstance(json_obj, str):
-                    cleaned = json_obj
-            except json.JSONDecodeError:
-                # 如果不是有效的JSON，则保持原样
-                pass
+                # 尝试解析JSON
+                import json
+                import re
+                
+                # 首先尝试直接解析JSON
+                data_list = json.loads(text)
+                if isinstance(data_list, list):
+                    # 提取所有text字段并拼接
+                    texts = []
+                    for item in data_list:
+                        if isinstance(item, dict):
+                            # 处理text字段
+                            if 'text' in item and isinstance(item['text'], str):
+                                text_content = item['text'].strip()
+                                if text_content and text_content not in ['\\n', '\n']:
+                                    texts.append(text_content)
+                            # 处理segment字段（可能包含嵌套的文本）
+                            elif ('segment' in item 
+                                  and isinstance(item['segment'], dict) 
+                                  and 'text' in item['segment'] 
+                                  and isinstance(item['segment']['text'], str)):
+                                text_content = item['segment']['text'].strip()
+                                if text_content and text_content not in ['\\n', '\\n', '\n']:
+                                    texts.append(text_content)
+                    return ''.join(texts)
+            except (json.JSONDecodeError, Exception):
+                # 如果解析失败，尝试使用正则表达式提取
+                try:
+                    text_matches = re.findall(r"['\"]text['\"]\s*:\s*['\"](.*?)['\"]", text)
+                    if text_matches:
+                        # 过滤掉换行符等特殊字符
+                        filtered_texts = [t.replace('\\\\n', '').replace('\\n', '').replace('\n', '') 
+                                          for t in text_matches 
+                                          if t not in ['\\\\n', '\\n', '\n']]
+                        return ''.join(filtered_texts)
+                except:
+                    pass
         
-        return cleaned
+        return text
     
     async def process_feishu_message(self, request: FeishuMessageRequest) -> dict:
         """
