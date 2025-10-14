@@ -227,20 +227,20 @@ class GraphicOutlineAgent(BaseAgent):
             # 硬编码验证必填字段
             missing_fields = []
             if not request_data.get("direction"):
-                missing_fields.append("direction")
+                missing_fields.append("创作方向-direction")
             if not request_data.get("requirements"):
-                missing_fields.append("requirements")
+                missing_fields.append("创作要求-requirements")
             if not request_data.get("product_name"):
-                missing_fields.append("product_name")
+                missing_fields.append("产品名称-product_name")
             if not request_data.get("ProductHighlights"):
-                missing_fields.append("ProductHighlights")
+                missing_fields.append("卖点信息-ProductHighlights")
             if not request_data.get("outline_direction"):
-                missing_fields.append("outline_direction")
+                missing_fields.append("大纲方向建议-outline_direction")
             if not request_data.get("blogger_link"):
-                missing_fields.append("blogger_link")
+                missing_fields.append("达人主页链接-blogger_link")
                 
             if missing_fields:
-                error_msg = f"Missing required fields: {', '.join(missing_fields)}"
+                error_msg = f"缺少必填参数: {', '.join(missing_fields)}"
                 self.logger.error(f"Validation error in process_request API with request_id {request_id}: {error_msg}")
                 response = ProcessRequestResponse(
                     status="error",
