@@ -201,7 +201,7 @@ async def extract_blogger_style(request_data: Dict[str, Any]) -> Dict[str, Any]:
                     "text": f"\n【配文】：{caption}\n"
                 })
 
-        logger.info(f"Extracting blogger style for {len(blogger_posts)} posts")
+        logger.info(f"Extracting blogger style for {(blogger_posts)} posts")
 
         # 调用豆包视觉模型，传递内容数组而不是纯文本
         from models.doubao import get_doubao_model
@@ -562,5 +562,5 @@ task_processor = TaskProcessor()
 
 # 注册所有任务
 task_processor.register_task("blogger_style_extractor", extract_blogger_style)  # 注册达人风格理解提取任务
-task_processor.register_task("product_endorsement_extractor", extract_product_endorsement)  # 注册产品背书提取任务
-task_processor.register_task("topic_extractor", extract_topic)  # 注册话题提取任务
+# task_processor.register_task("product_endorsement_extractor", extract_product_endorsement)  # 注册产品背书提取任务
+# task_processor.register_task("topic_extractor", extract_topic)  # 注册话题提取任务

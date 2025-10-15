@@ -953,9 +953,9 @@ class GraphicOutlineAgent(BaseAgent):
             #达人风格
             "blogger_style_extractor": "blogger_style",
             #产品背书
-            "product_endorsement_extractor": "product_endorsement",
+            # "product_endorsement_extractor": "product_endorsement",
             #话题
-            "topic_extractor": "main_topic"
+            # "topic_extractor": "main_topic"
         }
         
         # 统一处理所有提取器数据
@@ -967,7 +967,7 @@ class GraphicOutlineAgent(BaseAgent):
         processed_outline["sections"] = sections
         processed_outline["total_words"] = sum(len(str(content)) for content in sections.values())
         
-        self.logger.info("Successfully aggregated and processed task results")
+        self.logger.info(f"Successfully aggregated and processed task results{processed_outline}")
         return processed_outline
 
     async def _generate_planting_captions(self, processed_data: Dict[str, Any], planting_content: str, user_prompt: Optional[str] = None) -> str:
