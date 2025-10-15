@@ -585,18 +585,14 @@ class GraphicOutlineAgent(BaseAgent):
                 "B5": "",  
                 "B6": "",  
                 "B7": "",  
-                "B8": outline_data.get("planting_captions", ""),  
-                "B9": outline_data.get("sections", {}).get("main_topic", ""),  
+                "B8": "",
+                "B9": "",
                 "C2": "",  
                 "D6": "",  
                 "E2": "",  
                 "F6": "",  
             }
 
-            # 测试种草图文规划生成
-            # planting_content = await self._generate_planting_content(outline_data)
-            # self.logger.info("Generated planting content:")
-            # self.logger.info(planting_content[:-1])
 
             # 解析图文规划内容
             planting_content = outline_data.get("planting_content", "")
@@ -658,6 +654,17 @@ class GraphicOutlineAgent(BaseAgent):
             self.logger.info(f"  Hashtags: {captions_data['hashtags']}")
             
             # 更新单元格数据
+            planting_captions_data = outline_data.get("planting_captions", "")
+            # 解析planting_captions JSON数据
+            try:
+                parsed_captions = json.loads(planting_captions_data) if isinstance(planting_captions_data, str) else planting_captions_data
+                b8_content = parsed_captions.get("content", "") if parsed_captions else ""
+                b9_tags = parsed_captions.get("tags", "") if parsed_captions else ""
+            except (json.JSONDecodeError, AttributeError):
+                # 如果解析失败，使用原始数据
+                b8_content = planting_captions_data
+                b9_tags = ""
+            
             cell_data.update({
                 "B1": "",  
                 "B2": "",  
@@ -666,8 +673,8 @@ class GraphicOutlineAgent(BaseAgent):
                 "B5": "",  
                 "B6": "",  
                 "B7": "",  
-                "B8": outline_data.get("planting_captions", ""),  
-                "B9": outline_data.get("sections", {}).get("main_topic", ""),  
+                "B8": b8_content,  
+                "B9": b9_tags,  
                 "C2": "",  
                 "D6": "",  
                 "E2": "",  
@@ -1122,11 +1129,40 @@ class GraphicOutlineAgent(BaseAgent):
             
             # 调用模型
             captions_content = await self.model_manager.call_model("_generate_planting_captions", prompt)
-            return captions_content
+            
+            # 提取标签并返回结构化结果
+            result = self._extract_tags_from_content(captions_content)
+            return json.dumps(result, ensure_ascii=False)
             
         except Exception as e:
             self.logger.error(f"Error generating planting captions: {str(e)}")
-            return "种草配文生成失败"
+            return json.dumps({"content": "种草配文生成失败", "tags": ""}, ensure_ascii=False)
+    
+    def _extract_tags_from_content(self, content: str) -> Dict[str, str]:
+        """
+        从内容中提取标签部分
+        
+        Args:
+            content: 包含标签的完整内容
+            
+        Returns:
+            包含content和tags字段的字典
+        """
+        # 提取标签内容
+        tags_pattern = r"- \*\*标签\*\*：(.*)"
+        tags_match = re.search(tags_pattern, content)
+        tags_content = ""
+        
+        if tags_match:
+            tags_content = tags_match.group(1).strip()
+            # 从原内容中移除标签行
+            content = re.sub(tags_pattern, "", content).strip()
+        
+        # 构造返回结果，包含内容和标签
+        return {
+            "content": content,
+            "tags": tags_content
+        }
     
     async def _generate_planting_captions_cp(self, processed_data: Dict[str, Any], planting_content: str, user_prompt: Optional[str] = None) -> str:
         """
@@ -1204,12 +1240,15 @@ class GraphicOutlineAgent(BaseAgent):
             
             # 调用模型
             captions_content = await self.model_manager.call_model("_generate_planting_captions_cp", prompt)
-            return captions_content
+            
+            # 提取标签并返回结构化结果
+            result = self._extract_tags_from_content(captions_content)
+            return json.dumps(result, ensure_ascii=False)
             
         except Exception as e:
             self.logger.error(f"Error generating planting captions: {str(e)}")
-            return "测评配文生成失败"
-
+            return json.dumps({"content": "测评配文生成失败", "tags": ""}, ensure_ascii=False)
+    
     async def _generate_planting_content(self, processed_data: Dict[str, Any], user_prompt: Optional[str] = None) -> str:
         """
         生成种草图文规划内容
