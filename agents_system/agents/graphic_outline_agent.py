@@ -656,8 +656,8 @@ class GraphicOutlineAgent(BaseAgent):
                         # 去掉第一行和最后一行（代码块标记）
                         cleaned_captions_data = '\n'.join(lines[1:-1]).strip()
                 
-                # 解析JSON数据
-                parsed_captions = json.loads(cleaned_captions_data) if isinstance(cleaned_captions_data, str) else cleaned_captions_data
+                # 尝试直接解析
+                parsed_captions = json.loads(cleaned_captions_data)
                 
                 # 提取captions内容
                 if isinstance(parsed_captions, dict) and "captions" in parsed_captions:
@@ -685,11 +685,87 @@ class GraphicOutlineAgent(BaseAgent):
                 else:
                     b9_tags = parsed_captions.get("tags", "") if parsed_captions else ""
             except (json.JSONDecodeError, AttributeError, TypeError) as e:
-                # 如果解析失败，使用原始数据
+                # 如果解析失败，尝试修复JSON字符串
                 self.logger.error(f"Error parsing planting_captions JSON: {e}")
-                b8_content = planting_captions_data
-                b9_tags = ""
-            
+                try:
+                    # 尝试修复常见的JSON问题
+                    fixed_data = cleaned_captions_data
+                    # 替换可能导致问题的控制字符
+                    fixed_data = ''.join(ch if ord(ch) >= 32 or ch in '\n\r\t' else ' ' for ch in fixed_data)
+                    # 尝试解析修复后的数据
+                    parsed_captions = json.loads(fixed_data)
+                    
+                    # 提取captions内容
+                    if isinstance(parsed_captions, dict) and "captions" in parsed_captions:
+                        captions_data = parsed_captions.get("captions", {})
+                        # 构造B8内容，包含标题和正文
+                        titles = captions_data.get("titles", [])
+                        content = captions_data.get("content", "")
+                        ending = captions_data.get("ending", "")
+                        
+                        # 格式化标题内容
+                        titles_text = "\n".join([f"标题{i+1}：{title}" for i, title in enumerate(titles)])
+                        
+                        # 组合B8内容
+                        b8_content = f"{titles_text}\n正文：{content}\n收尾：{ending}"
+                    else:
+                        b8_content = parsed_captions.get("content", "") if parsed_captions else ""
+                    
+                    # 提取tags内容
+                    if isinstance(parsed_captions, dict) and "tags" in parsed_captions:
+                        tags_data = parsed_captions.get("tags", [])
+                        if isinstance(tags_data, list):
+                            b9_tags = " ".join(tags_data)
+                        else:
+                            b9_tags = str(tags_data)
+                    else:
+                        b9_tags = parsed_captions.get("tags", "") if parsed_captions else ""
+                except (json.JSONDecodeError, AttributeError, TypeError) as e2:
+                    # 如果仍然失败，尝试使用正则表达式提取
+                    self.logger.error(f"Error parsing fixed planting_captions JSON: {e2}")
+                    try:
+                        import re
+                        # 使用正则表达式提取titles
+                        titles_match = re.search(r'"titles"\s*:\s*(\[[^\]]*\])', cleaned_captions_data)
+                        titles = []
+                        if titles_match:
+                            titles_str = titles_match.group(1)
+                            # 简单解析标题数组
+                            titles = re.findall(r'"([^"]*)"', titles_str)
+                        
+                        # 使用正则表达式提取content
+                        content_match = re.search(r'"content"\s*:\s*"([^"]*)"', cleaned_captions_data)
+                        content = content_match.group(1) if content_match else ""
+                        # 处理转义字符
+                        content = content.replace('\\n', '\n').replace('\\t', '\t').replace('\\"', '"')
+                        
+                        # 使用正则表达式提取ending
+                        ending_match = re.search(r'"ending"\s*:\s*"([^"]*)"', cleaned_captions_data)
+                        ending = ending_match.group(1) if ending_match else ""
+                        # 处理转义字符
+                        ending = ending.replace('\\n', '\n').replace('\\t', '\t').replace('\\"', '"')
+                        
+                        # 使用正则表达式提取tags
+                        tags_match = re.search(r'"tags"\s*:\s*(\[[^\]]*\])', cleaned_captions_data)
+                        tags = []
+                        if tags_match:
+                            tags_str = tags_match.group(1)
+                            # 简单解析标签数组
+                            tags = re.findall(r'"([^"]*)"', tags_str)
+                        
+                        # 格式化标题内容
+                        titles_text = "\n".join([f"标题{i+1}：{title}" for i, title in enumerate(titles)])
+                        
+                        # 组合B8内容
+                        b8_content = f"{titles_text}\n正文：{content}\n收尾：{ending}"
+                        
+                        # 组合B9标签
+                        b9_tags = " ".join(tags)
+                    except Exception as e3:
+                        # 如果所有方法都失败，使用原始数据
+                        self.logger.error(f"Error parsing planting_captions with regex: {e3}")
+                        b8_content = planting_captions_data
+                        b9_tags = ""
             cell_data.update({
                 "B1": "",  
                 "B2": "",  
