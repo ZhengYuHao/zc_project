@@ -641,27 +641,52 @@ class GraphicOutlineAgent(BaseAgent):
                 self.logger.info(f"    Caption: {data['caption']}")
                 self.logger.info(f"    Remark: {data['remark']}")
 
-            # 测试种草配文生成
-            # planting_captions = await self._generate_planting_captions(outline_data, planting_content)
-            # self.logger.info("\nGenerated planting captions:")
-            # self.logger.info(planting_captions[:-1])
-
-            # 解析配文内容
-            captions_data = parse_planting_captions(outline_data.get("planting_captions",""))
-            self.logger.info("Parsed captions data:")
-            self.logger.info(f"  Titles: {captions_data['titles']}")
-            self.logger.info(f"  Body length: {captions_data['body']}")
-            self.logger.info(f"  Hashtags: {captions_data['hashtags']}")
             
             # 更新单元格数据
             planting_captions_data = outline_data.get("planting_captions", "")
+            self.logger.info(f"Parsed planting_captions:{planting_captions_data}")
             # 解析planting_captions JSON数据
             try:
-                parsed_captions = json.loads(planting_captions_data) if isinstance(planting_captions_data, str) else planting_captions_data
-                b8_content = parsed_captions.get("content", "") if parsed_captions else ""
-                b9_tags = parsed_captions.get("tags", "") if parsed_captions else ""
-            except (json.JSONDecodeError, AttributeError):
+                # 首先清理可能的代码块标记
+                cleaned_captions_data = planting_captions_data.strip()
+                if cleaned_captions_data.startswith("```") and cleaned_captions_data.endswith("```"):
+                    # 提取代码块中的内容
+                    lines = cleaned_captions_data.split('\n')
+                    if len(lines) >= 3:
+                        # 去掉第一行和最后一行（代码块标记）
+                        cleaned_captions_data = '\n'.join(lines[1:-1]).strip()
+                
+                # 解析JSON数据
+                parsed_captions = json.loads(cleaned_captions_data) if isinstance(cleaned_captions_data, str) else cleaned_captions_data
+                
+                # 提取captions内容
+                if isinstance(parsed_captions, dict) and "captions" in parsed_captions:
+                    captions_data = parsed_captions.get("captions", {})
+                    # 构造B8内容，包含标题和正文
+                    titles = captions_data.get("titles", [])
+                    content = captions_data.get("content", "")
+                    ending = captions_data.get("ending", "")
+                    
+                    # 格式化标题内容
+                    titles_text = "\n".join([f"标题{i+1}：{title}" for i, title in enumerate(titles)])
+                    
+                    # 组合B8内容
+                    b8_content = f"{titles_text}\n正文：{content}\n收尾：{ending}"
+                else:
+                    b8_content = parsed_captions.get("content", "") if parsed_captions else ""
+                
+                # 提取tags内容
+                if isinstance(parsed_captions, dict) and "tags" in parsed_captions:
+                    tags_data = parsed_captions.get("tags", [])
+                    if isinstance(tags_data, list):
+                        b9_tags = " ".join(tags_data)
+                    else:
+                        b9_tags = str(tags_data)
+                else:
+                    b9_tags = parsed_captions.get("tags", "") if parsed_captions else ""
+            except (json.JSONDecodeError, AttributeError, TypeError) as e:
                 # 如果解析失败，使用原始数据
+                self.logger.error(f"Error parsing planting_captions JSON: {e}")
                 b8_content = planting_captions_data
                 b9_tags = ""
             
@@ -1128,11 +1153,14 @@ class GraphicOutlineAgent(BaseAgent):
             prompt = user_prompt if user_prompt else system_prompt
             
             # 调用模型
-            captions_content = await self.model_manager.call_model("_generate_planting_captions", prompt)
+            captions_content = await self.model_manager.call_model(
+                "_generate_planting_captions", 
+                prompt,
+                response_format={"type": "json_object"}
+            )
             
-            # 提取标签并返回结构化结果
-            result = self._extract_tags_from_content(captions_content)
-            return json.dumps(result, ensure_ascii=False)
+        
+            return captions_content
             
         except Exception as e:
             self.logger.error(f"Error generating planting captions: {str(e)}")
@@ -1238,12 +1266,15 @@ class GraphicOutlineAgent(BaseAgent):
             # 使用用户提示词或系统提示词
             prompt = user_prompt if user_prompt else system_prompt
             
-            # 调用模型
-            captions_content = await self.model_manager.call_model("_generate_planting_captions_cp", prompt)
+            # 调用模型，强制JSON输出
+            captions_content = await self.model_manager.call_model(
+                "_generate_planting_captions_cp", 
+                prompt,
+                response_format={"type": "json_object"}
+            )
             
-            # 提取标签并返回结构化结果
-            result = self._extract_tags_from_content(captions_content)
-            return json.dumps(result, ensure_ascii=False)
+            # 返回JSON格式的配文内容
+            return captions_content
             
         except Exception as e:
             self.logger.error(f"Error generating planting captions: {str(e)}")
@@ -1367,7 +1398,7 @@ class GraphicOutlineAgent(BaseAgent):
             ProductHighlights = processed_data.get("ProductHighlights", "")  # 使用新的字段名
             # 从sections中提取目标人群和卖点信息
             sections = processed_data.get("sections", {})
-            requirements = processed_data.get("requirements", "")  # 内용方向建议
+            requirements = processed_data.get("requirements", "")  # 内츠方向建议
             notice = processed_data.get("notice", "")  # 注意事项
             picture_number = processed_data.get("picture_number", 6)  # 图片数量，默认为6
             outline_direction = processed_data.get("outline_direction", "")
