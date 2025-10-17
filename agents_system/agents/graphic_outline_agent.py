@@ -644,11 +644,14 @@ class GraphicOutlineAgent(BaseAgent):
                                 "remark": img.get("remark", ""),
                                 "caption": ""
                             })
-                    except json.JSONDecodeError:
-                        # 如果JSON解析失败，回退到原来的解析方法
+                        self.logger.info(f"Successfully parsed JSON format planting content with {len(planting_data)} items")
+                    except json.JSONDecodeError as e:
+                        # 如果JSON解析失败，记录错误并回退到原来的解析方法
+                        self.logger.error(f"Failed to parse planting content as JSON: {str(e)}")
                         planting_data = parse_planting_content(planting_content)
                 else:
                     # 使用原来的解析方法
+                    self.logger.info("Using regex parser for planting content")
                     planting_data = parse_planting_content(planting_content)
             else:
                 # 内容为空时使用原来的解析方法
@@ -680,6 +683,7 @@ class GraphicOutlineAgent(BaseAgent):
                 
                 # 尝试直接解析
                 parsed_captions = json.loads(cleaned_captions_data)
+                self.logger.info("Successfully parsed planting_captions as JSON")
                 
                 # 提取captions内容
                 if isinstance(parsed_captions, dict) and "captions" in parsed_captions:
@@ -716,6 +720,7 @@ class GraphicOutlineAgent(BaseAgent):
                     fixed_data = ''.join(ch if ord(ch) >= 32 or ch in '\n\r\t' else ' ' for ch in fixed_data)
                     # 尝试解析修复后的数据
                     parsed_captions = json.loads(fixed_data)
+                    self.logger.info("Successfully parsed fixed planting_captions JSON")
                     
                     # 提取captions内容
                     if isinstance(parsed_captions, dict) and "captions" in parsed_captions:
