@@ -625,6 +625,7 @@ class GraphicOutlineAgent(BaseAgent):
                 cleaned_content = planting_content.strip()
                 
                 # 处理可能存在的多重代码块标记
+                # 循环剥离外层的代码块标记，直到无法再剥离为止
                 while cleaned_content.startswith("```") and cleaned_content.endswith("```"):
                     # 提取代码块中的内容
                     lines = cleaned_content.split('\n')
@@ -634,9 +635,21 @@ class GraphicOutlineAgent(BaseAgent):
                     else:
                         break  # 防止无限循环
                 
+                # 处理只有开头标记没有结尾标记的情况
+                if cleaned_content.startswith("```"):
+                    lines = cleaned_content.split('\n')
+                    if len(lines) >= 2:
+                        cleaned_content = '\n'.join(lines[1:]).strip()
+                
+                # 处理可能存在的语言标识（如```json）
+                if cleaned_content.startswith("json"):
+                    lines = cleaned_content.split('\n')
+                    if len(lines) >= 2:
+                        cleaned_content = '\n'.join(lines[1:]).strip()
+                
                 # 检查是否是JSON格式的输出
-                if cleaned_content.startswith('{'):
-                    self.logger.info(f"cleaned_content spreadsheet data for outline_data: {cleaned_content}")
+                if cleaned_content.startswith('{') and cleaned_content.endswith('}'):
+                    self.logger.info(f"Attempting to parse JSON content, length: {len(cleaned_content)}")
                     try:
                         import json
                         planting_json = json.loads(cleaned_content)
@@ -652,6 +665,7 @@ class GraphicOutlineAgent(BaseAgent):
                     except json.JSONDecodeError as e:
                         # 如果JSON解析失败，记录错误并回退到原来的解析方法
                         self.logger.error(f"Failed to parse planting content as JSON: {str(e)}")
+                        self.logger.error(f"Content that failed to parse: {cleaned_content[:-1]}...")
                         planting_data = parse_planting_content(planting_content)
                 else:
                     # 使用原来的解析方法
@@ -688,6 +702,18 @@ class GraphicOutlineAgent(BaseAgent):
                         cleaned_captions_data = '\n'.join(lines[1:-1]).strip()
                     else:
                         break  # 防止无限循环
+                
+                # 处理只有开头标记没有结尾标记的情况
+                if cleaned_captions_data.startswith("```"):
+                    lines = cleaned_captions_data.split('\n')
+                    if len(lines) >= 2:
+                        cleaned_captions_data = '\n'.join(lines[1:]).strip()
+                
+                # 处理可能存在的语言标识（如```json）
+                if cleaned_captions_data.startswith("json"):
+                    lines = cleaned_captions_data.split('\n')
+                    if len(lines) >= 2:
+                        cleaned_captions_data = '\n'.join(lines[1:]).strip()
                 
                 # 尝试直接解析
                 parsed_captions = json.loads(cleaned_captions_data)
@@ -766,19 +792,22 @@ class GraphicOutlineAgent(BaseAgent):
                         if titles_match:
                             titles_str = titles_match.group(1)
                             # 简单解析标题数组
-                            titles = re.findall(r'"([^"]*)"', titles_str)
+                            # 支持带转义字符的字符串匹配
+                            titles = re.findall(r'"((?:[^"\\]|\\.)*)"', titles_str)
+                            # 处理转义字符
+                            titles = [title.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t') for title in titles]
                         
                         # 使用正则表达式提取content
-                        content_match = re.search(r'"content"\s*:\s*"([^"]*)"', cleaned_captions_data)
+                        content_match = re.search(r'"content"\s*:\s*"((?:[^"\\]|\\.)*)"', cleaned_captions_data)
                         content = content_match.group(1) if content_match else ""
                         # 处理转义字符
-                        content = content.replace('\\n', '\n').replace('\\t', '\t').replace('\\"', '"')
+                        content = content.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t')
                         
                         # 使用正则表达式提取ending
-                        ending_match = re.search(r'"ending"\s*:\s*"([^"]*)"', cleaned_captions_data)
+                        ending_match = re.search(r'"ending"\s*:\s*"((?:[^"\\]|\\.)*)"', cleaned_captions_data)
                         ending = ending_match.group(1) if ending_match else ""
                         # 处理转义字符
-                        ending = ending.replace('\\n', '\n').replace('\\t', '\t').replace('\\"', '"')
+                        ending = ending.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t')
                         
                         # 使用正则表达式提取tags
                         tags_match = re.search(r'"tags"\s*:\s*(\[[^\]]*\])', cleaned_captions_data)
@@ -786,7 +815,10 @@ class GraphicOutlineAgent(BaseAgent):
                         if tags_match:
                             tags_str = tags_match.group(1)
                             # 简单解析标签数组
-                            tags = re.findall(r'"([^"]*)"', tags_str)
+                            # 支持带转义字符的字符串匹配
+                            tags = re.findall(r'"((?:[^"\\]|\\.)*)"', tags_str)
+                            # 处理转义字符
+                            tags = [tag.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t') for tag in tags]
                         
                         # 格式化标题内容
                         titles_text = "\n".join([f"标题{i+1}：{title}" for i, title in enumerate(titles)])
