@@ -1314,6 +1314,12 @@ class GraphicOutlineAgent(BaseAgent):
             # 使用用户提示词或系统提示词
             prompt = user_prompt if user_prompt else system_prompt
             
+            # 添加日志记录输入参数
+            self.logger.info(f"[_generate_planting_captions] Calling model with task_type: _generate_planting_captions")
+            self.logger.debug(f"[_generate_planting_captions] Prompt: {prompt}")
+            self.logger.debug(f"[_generate_planting_captions] Processed data: {processed_data}")
+            self.logger.debug(f"[_generate_planting_captions] Planting content: {planting_content}")
+            
             # 调用模型
             captions_content = await self.model_manager.call_model(
                 "_generate_planting_captions", 
@@ -1321,11 +1327,26 @@ class GraphicOutlineAgent(BaseAgent):
                 response_format={"type": "json_object"}
             )
             
+            # 添加日志记录模型返回结果
+            self.logger.info(f"[_generate_planting_captions] Model call successful")
+            self.logger.debug(f"[_generate_planting_captions] Model response: {captions_content}")
+            
+            # 尝试解析返回内容
+            try:
+                import json
+                parsed_content = json.loads(captions_content)
+                self.logger.debug(f"[_generate_planting_captions] Parsed JSON response: {parsed_content}")
+            except json.JSONDecodeError as je:
+                self.logger.warning(f"[_generate_planting_captions] Failed to parse model response as JSON: {je}")
+            
         
             return captions_content
             
         except Exception as e:
             self.logger.error(f"Error generating planting captions: {str(e)}")
+            # 添加堆栈跟踪信息
+            import traceback
+            self.logger.error(f"Full traceback: {traceback.format_exc()}")
             return json.dumps({"content": "种草配文生成失败", "tags": ""}, ensure_ascii=False)
     
     def _extract_tags_from_content(self, content: str) -> Dict[str, str]:
@@ -1428,6 +1449,12 @@ class GraphicOutlineAgent(BaseAgent):
             # 使用用户提示词或系统提示词
             prompt = user_prompt if user_prompt else system_prompt
             
+            # 添加日志记录输入参数
+            self.logger.info(f"[_generate_planting_captions_cp] Calling model with task_type: _generate_planting_captions_cp")
+            self.logger.debug(f"[_generate_planting_captions_cp] Prompt: {prompt}")
+            self.logger.debug(f"[_generate_planting_captions_cp] Processed data: {processed_data}")
+            self.logger.debug(f"[_generate_planting_captions_cp] Planting content: {planting_content}")
+            
             # 调用模型，强制JSON输出
             captions_content = await self.model_manager.call_model(
                 "_generate_planting_captions_cp", 
@@ -1435,11 +1462,26 @@ class GraphicOutlineAgent(BaseAgent):
                 response_format={"type": "json_object"}
             )
             
+            # 添加日志记录模型返回结果
+            self.logger.info(f"[_generate_planting_captions_cp] Model call successful")
+            self.logger.debug(f"[_generate_planting_captions_cp] Model response: {captions_content}")
+            
+            # 尝试解析返回内容
+            try:
+                import json
+                parsed_content = json.loads(captions_content)
+                self.logger.debug(f"[_generate_planting_captions_cp] Parsed JSON response: {parsed_content}")
+            except json.JSONDecodeError as je:
+                self.logger.warning(f"[_generate_planting_captions_cp] Failed to parse model response as JSON: {je}")
+            
             # 返回JSON格式的配文内容
             return captions_content
             
         except Exception as e:
             self.logger.error(f"Error generating planting captions: {str(e)}")
+            # 添加堆栈跟踪信息
+            import traceback
+            self.logger.error(f"Full traceback: {traceback.format_exc()}")
             return json.dumps({"content": "测评配文生成失败", "tags": ""}, ensure_ascii=False)
     
     async def _generate_planting_content(self, processed_data: Dict[str, Any], user_prompt: Optional[str] = None) -> str:
@@ -1459,7 +1501,7 @@ class GraphicOutlineAgent(BaseAgent):
             ProductHighlights = processed_data.get("ProductHighlights", "")  # 使用新的字段名
             # 从sections中提取目标人群和卖点信息
             sections = processed_data.get("sections", {})
-            requirements = processed_data.get("requirements", "")  # 内容方向建议
+            requirements = processed_data.get("requirements", "")  # 内츠方向建议
             notice = processed_data.get("notice", "")  # 注意事项
             picture_number = processed_data.get("picture_number", 6)  # 图片数量，默认为6
             outline_direction = processed_data.get("outline_direction", "")
@@ -1532,16 +1574,37 @@ class GraphicOutlineAgent(BaseAgent):
             # 使用用户提示词或系统提示词
             prompt = user_prompt if user_prompt else system_prompt
             
+            # 添加日志记录输入参数
+            self.logger.info(f"[_generate_planting_content] Calling model with task_type: _generate_planting_content")
+            self.logger.debug(f"[_generate_planting_content] Prompt: {prompt}")
+            self.logger.debug(f"[_generate_planting_content] Processed data: {processed_data}")
+            
             # 调用模型时添加response_format参数，要求JSON格式输出
             planting_content = await self.model_manager.call_model(
                 "_generate_planting_content", 
                 prompt, 
                 response_format={"type": "json_object"}
             )
+            
+            # 添加日志记录模型返回结果
+            self.logger.info(f"[_generate_planting_content] Model call successful")
+            self.logger.debug(f"[_generate_planting_content] Model response: {planting_content}")
+            
+            # 尝试解析返回内容
+            try:
+                import json
+                parsed_content = json.loads(planting_content)
+                self.logger.debug(f"[_generate_planting_content] Parsed JSON response: {parsed_content}")
+            except json.JSONDecodeError as je:
+                self.logger.warning(f"[_generate_planting_content] Failed to parse model response as JSON: {je}")
+            
             return planting_content
             
         except Exception as e:
             self.logger.error(f"Error generating planting content: {str(e)}")
+            # 添加堆栈跟踪信息
+            import traceback
+            self.logger.error(f"Full traceback: {traceback.format_exc()}")
             return "种草图文规划生成失败"
     async def _generate_planting_content_cp(self, processed_data: Dict[str, Any], user_prompt: Optional[str] = None) -> str:
         """
@@ -1560,7 +1623,7 @@ class GraphicOutlineAgent(BaseAgent):
             ProductHighlights = processed_data.get("ProductHighlights", "")  # 使用新的字段名
             # 从sections中提取目标人群和卖点信息
             sections = processed_data.get("sections", {})
-            requirements = processed_data.get("requirements", "")  # 内츠方向建议
+            requirements = processed_data.get("requirements", "")  # 内茨方向建议
             notice = processed_data.get("notice", "")  # 注意事项
             picture_number = processed_data.get("picture_number", 6)  # 图片数量，默认为6
             outline_direction = processed_data.get("outline_direction", "")
@@ -1593,7 +1656,9 @@ class GraphicOutlineAgent(BaseAgent):
             skill_3 = prompt_template.get("skills", {}).get("skill_3", "")
             
             # 构建输出格式
-            output_format = prompt_template.get("output_format", "").format(picture_number=picture_number)
+            output_format_template = prompt_template.get("output_format", "")
+            # 手动替换占位符以避免KeyError
+            output_format = output_format_template.replace('{picture_number}', str(picture_number)).replace('{content_direction}', '')
             
             # 构建限制
             restrictions = "\n".join(prompt_template.get("restrictions", []))
@@ -1631,16 +1696,37 @@ class GraphicOutlineAgent(BaseAgent):
             # 使用用户提示词或系统提示词
             prompt = user_prompt if user_prompt else system_prompt
             
+            # 添加日志记录输入参数
+            self.logger.info(f"[_generate_planting_content_cp] Calling model with task_type: _generate_planting_content_cp")
+            self.logger.debug(f"[_generate_planting_content_cp] Prompt: {prompt}")
+            self.logger.debug(f"[_generate_planting_content_cp] Processed data: {processed_data}")
+            
             # 调用模型时添加response_format参数，要求JSON格式输出
             planting_content = await self.model_manager.call_model(
                 "_generate_planting_content_cp", 
                 prompt, 
                 response_format={"type": "json_object"}
             )
+            
+            # 添加日志记录模型返回结果
+            self.logger.info(f"[_generate_planting_content_cp] Model call successful")
+            self.logger.debug(f"[_generate_planting_content_cp] Model response: {planting_content}")
+            
+            # 尝试解析返回内容
+            try:
+                import json
+                parsed_content = json.loads(planting_content)
+                self.logger.debug(f"[_generate_planting_content_cp] Parsed JSON response: {parsed_content}")
+            except json.JSONDecodeError as je:
+                self.logger.warning(f"[_generate_planting_content_cp] Failed to parse model response as JSON: {je}")
+            
             return planting_content
             
         except Exception as e:
             self.logger.error(f"Error generating planting content: {str(e)}")
+            # 添加堆栈跟踪信息
+            import traceback
+            self.logger.error(f"Full traceback: {traceback.format_exc()}")
             return "测评图文规划生成失败"
 
 
