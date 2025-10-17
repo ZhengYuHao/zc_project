@@ -623,12 +623,16 @@ class GraphicOutlineAgent(BaseAgent):
             if planting_content:
                 # 首先尝试清理可能的代码块标记
                 cleaned_content = planting_content.strip()
-                if cleaned_content.startswith("```") and cleaned_content.endswith("```"):
+                
+                # 处理可能存在的多重代码块标记
+                while cleaned_content.startswith("```") and cleaned_content.endswith("```"):
                     # 提取代码块中的内容
                     lines = cleaned_content.split('\n')
                     if len(lines) >= 3:
                         # 去掉第一行和最后一行（代码块标记）
                         cleaned_content = '\n'.join(lines[1:-1]).strip()
+                    else:
+                        break  # 防止无限循环
                 
                 # 检查是否是JSON格式的输出
                 if cleaned_content.startswith('{'):
@@ -674,12 +678,16 @@ class GraphicOutlineAgent(BaseAgent):
             try:
                 # 首先清理可能的代码块标记
                 cleaned_captions_data = planting_captions_data.strip()
-                if cleaned_captions_data.startswith("```") and cleaned_captions_data.endswith("```"):
+                
+                # 处理可能存在的多重代码块标记
+                while cleaned_captions_data.startswith("```") and cleaned_captions_data.endswith("```"):
                     # 提取代码块中的内容
                     lines = cleaned_captions_data.split('\n')
                     if len(lines) >= 3:
                         # 去掉第一行和最后一行（代码块标记）
                         cleaned_captions_data = '\n'.join(lines[1:-1]).strip()
+                    else:
+                        break  # 防止无限循环
                 
                 # 尝试直接解析
                 parsed_captions = json.loads(cleaned_captions_data)
@@ -1604,10 +1612,6 @@ class GraphicOutlineAgent(BaseAgent):
             return "测评图文规划生成失败"
 
 
-import re
-from typing import List, Dict, Any
-
-
 def parse_planting_content(content: str) -> List[Dict[str, str]]:
     """
     解析图文规划内容
@@ -1644,6 +1648,11 @@ def parse_planting_content(content: str) -> List[Dict[str, str]]:
             remark_match = re.search(r'备注：(.*)', remark_section, re.DOTALL)
             if remark_match:
                 remark = remark_match.group(1).strip()
+                # 处理转义字符
+                remark = remark.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t')
+            
+            # 处理planning中的转义字符
+            planning = planning.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t')
             
             image_info = {
                 "image_type": image_type,
@@ -1668,6 +1677,11 @@ def parse_planting_content(content: str) -> List[Dict[str, str]]:
             remark_match = re.search(r'备注：(.*)', remark_section, re.DOTALL)
             if remark_match:
                 remark = remark_match.group(1).strip()
+                # 处理转义字符
+                remark = remark.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t')
+            
+            # 处理planning中的转义字符
+            planning = planning.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t')
             
             image_info = {
                 "image_type": image_type,
@@ -1710,11 +1724,16 @@ def parse_planting_content(content: str) -> List[Dict[str, str]]:
                             if layout_match:
                                 planning += "\n排版建议：" + layout_match.group(1).strip()
                         
+                        # 处理planning中的转义字符
+                        planning = planning.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t')
+                        
                         # 提取备注
                         remark = ""
                         remark_match = re.search(r'备注：(.*?)(?=\n图片类型：|\Z)', section, re.DOTALL)
                         if remark_match:
                             remark = remark_match.group(1).strip()
+                            # 处理转义字符
+                            remark = remark.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t')
                         
                         image_info = {
                             "image_type": image_type,

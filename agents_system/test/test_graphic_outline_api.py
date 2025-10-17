@@ -114,8 +114,8 @@ async def send_concurrent_requests(api_url: str, test_data: List[Dict[str, Any]]
     
     # 限制并发数量，避免对服务器造成过大压力
     connector = aiohttp.TCPConnector(limit=10)
-    # 将超时时间从30秒增加到300秒（5分钟），以适应可能较长的API处理时间
-    timeout = aiohttp.ClientTimeout(total=300)
+    # 将超时时间从30秒增加到600秒（10分钟），以适应可能较长的API处理时间
+    timeout = aiohttp.ClientTimeout(total=600)
     
     async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
         # 创建所有任务
@@ -305,7 +305,7 @@ def main():
     # #视频脚本
     # api_url = "http://124.221.155.224:8844/api/video-demo-create"
     # #图文大纲
-    api_url = "http://124.221.155.224:8847/graphic_outline/process-request"
+    api_url = "http://124.221.155.224:8857/graphic_outline/process-request"
     
     # 查找JSON文件
     json_file_name = "spreadsheet_post_data_图文大纲创作_converted.json"
