@@ -216,10 +216,10 @@ class GraphicOutlineAgent(BaseAgent):
                     try:
                         response_json = response.json()
                         await process_feishu_record_cell(record_link, "图文大纲创作结果", response_json)
-                        self.logger.info(f"Successfully updated Feishu bitable record with error for record_link: {record_link}")
+                        self.logger.info(f"Successfully updated Feishu bitable record with outline for record_link: {record_link}")
                     except Exception as e:
-                        self.logger.error(f"Failed to update Feishu bitable record with error for record_link {record_link}: {str(e)}")
-                
+                        self.logger.error(f"Failed to update Feishu bitable record with outline for record_link {record_link}: {str(e)}")
+                    
                 return response
 
             self.logger.info(f"Processing process_request API request with request_id {request_id}: {request_data}")
@@ -257,7 +257,7 @@ class GraphicOutlineAgent(BaseAgent):
                         self.logger.info(f"Successfully updated Feishu bitable record with error for record_link: {record_link}")
                     except Exception as e:
                         self.logger.error(f"Failed to update Feishu bitable record with error for record_link {record_link}: {str(e)}")
-                
+                    
                 return response
 
             # 如果用户没有提交picture_number字段，默认设置为15张
@@ -326,6 +326,18 @@ class GraphicOutlineAgent(BaseAgent):
             record_link = request_data.get("record_link")
             if record_link:
                 try:
+                    # 获取并记录模型调用日志
+                    try:
+                        from models.model_call_logger import ModelCallLogger
+                        import json
+                        model_calls = ModelCallLogger.get_current_calls()
+                        if model_calls:
+                            model_calls_json = json.dumps(model_calls, ensure_ascii=False, indent=2)
+                            await process_feishu_record_cell(record_link, "模型调用日志", model_calls_json)
+                            self.logger.info(f"Successfully updated model call logs for record_link: {record_link}")
+                    except Exception as e:
+                        self.logger.error(f"Failed to update model call logs for record_link {record_link}: {str(e)}")
+                        
                     # 只返回电子表格链接
                     spreadsheet_info = result.get("spreadsheet", {})
                     if spreadsheet_info and spreadsheet_info.get("status") == "success":
@@ -340,16 +352,23 @@ class GraphicOutlineAgent(BaseAgent):
                         await process_feishu_record_cell(record_link, "图文大纲创作结果", response_json)
                         self.logger.info(f"Successfully updated Feishu bitable record with full response for record_link: {record_link}")
                 except Exception as e:
-                    self.logger.error(f"Failed to update Feishu bitable record for record_link {record_link}: {str(e)}")
+                    error_msg = str(e)
+                    self.logger.error(f"Failed to update Feishu bitable record for record_link {record_link}: {error_msg}")
+                    # 不要中断主流程，继续执行
             
             self.logger.info(f"Successfully processed process_request API request with request_id {request_id}")
             return response
             
         except Exception as e:
-            self.logger.error(f"Error processing process_request API request with request_id {request_id}: {str(e)}")
+            # 获取完整的堆栈跟踪信息
+            import traceback
+            error_traceback = traceback.format_exc()
+            error_msg = str(e)
+            self.logger.error(f"Error processing process_request API request with request_id {request_id}: {error_msg}\nFull traceback: {error_traceback}")
+            
             error_response = ProcessRequestResponse(
                 status="error",
-                error=str(e),
+                error=f"{error_msg} (request_id: {request_id})",
                 request_id=request_id
             )
             
@@ -363,7 +382,9 @@ class GraphicOutlineAgent(BaseAgent):
                     await process_feishu_record_cell(record_link, "图文大纲创作结果", error_response_json)
                     self.logger.info(f"Successfully updated Feishu bitable record with error for record_link: {record_link}")
             except Exception as update_error:
-                self.logger.error(f"Failed to update Feishu bitable record with error for record_link {record_link}: {str(update_error)}")
+                import traceback
+                update_error_traceback = traceback.format_exc()
+                self.logger.error(f"Failed to update Feishu bitable record with error for record_link {record_link}: {str(update_error)}\nFull traceback: {update_error_traceback}")
             
             return error_response
     
@@ -873,8 +894,27 @@ class GraphicOutlineAgent(BaseAgent):
                     # 更新飞书多维表格记录
                     await process_feishu_record_cell(record_link, "图文大纲创作结果", result_json)
                     self.logger.info(f"Successfully updated Feishu bitable record for record_link: {record_link}")
+                except DocumentVersionError as e:
+                    # 特别处理文档版本冲突错误
+                    error_msg = f"Document version conflict: {str(e)}"
+                    self.logger.warning(f"Failed to update Feishu bitable record due to version conflict for record_link {record_link}: {error_msg}")
+                except httpx.HTTPStatusError as e:
+                    # 处理HTTP状态错误
+                    error_msg = f"HTTP status error {e.response.status_code}: {e.response.text}"
+                    self.logger.error(f"HTTP error when updating Feishu bitable record for record_link {record_link}: {error_msg}")
+                except httpx.RequestError as e:
+                    # 处理请求错误
+                    error_msg = f"Request error: {str(e)}"
+                    self.logger.error(f"Network error when updating Feishu bitable record for record_link {record_link}: {error_msg}")
+                except json.JSONDecodeError as e:
+                    # 处理JSON编码错误
+                    error_msg = f"JSON encoding error: {str(e)}"
+                    self.logger.error(f"Failed to encode result to JSON when updating Feishu bitable record for record_link {record_link}: {error_msg}")
                 except Exception as e:
-                    self.logger.error(f"Failed to update Feishu bitable record for record_link {record_link}: {str(e)}")
+                    # 处理其他所有未预期的错误
+                    error_msg = f"Unexpected error: {str(e)}"
+                    self.logger.error(f"Unexpected error when updating Feishu bitable record for record_link {record_link}: {error_msg}")
+                    # 不要中断主流程，继续执行
             
             self.logger.info(f"Successfully created Feishu sheet: {spreadsheet_token}")
             return result

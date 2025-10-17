@@ -106,17 +106,22 @@ async def update_feishu_bitable_record(app_token: str, table_id: str, record_id:
         
         async with httpx.AsyncClient() as client:
             response = await client.put(url, headers=headers, json=payload)
-            response.raise_for_status()
             result = response.json()
             
+            # 检查飞书API返回的错误码
             if result.get("code") != 0:
-                raise Exception(f"Failed to update record in bitable: {result}")
+                error_code = result.get("code", "unknown")
+                error_msg = result.get("msg", "unknown error")
+                error_detail = f"Failed to update record in bitable: code={error_code}, msg={error_msg}"
+                print(error_detail)
+                raise Exception(error_detail)
             
             print(f"Successfully updated record: {result}")
             return result
             
     except Exception as e:
-        print(f"Error updating record in bitable: {str(e)}")
+        error_msg = f"Error updating record in bitable: {str(e)}"
+        print(error_msg)
         raise
 
 
