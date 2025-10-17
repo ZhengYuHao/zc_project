@@ -22,15 +22,15 @@ def convert_column_keys_to_variable_names(data):
     # 定义列字母到英文变量名的映射关系
     column_mapping = {
         # 图文大纲
-        # "row": 1,
-        # "D": "product_name",
-        # "E": "ProductHighlights",
-        # "F": "direction",
-        # "G": "blogger_link",
-        # "H": "requirements",
-        # "I": "notice",
-        # "J": "outline_direction",
-        # "K": "picture_number"
+        "row": 1,
+        "D": "product_name",
+        "E": "ProductHighlights",
+        "F": "direction",
+        "G": "blogger_link",
+        "H": "requirements",
+        "I": "notice",
+        "J": "outline_direction",
+        "K": "picture_number"
         #视频大纲
         # "row": 1,
         # "D": "product_name",
@@ -42,15 +42,15 @@ def convert_column_keys_to_variable_names(data):
         # "J": "notice",
         # "K": "name"
         #视频脚本
-        "row": 1,
-        "D": "brand_name",
-        "E": "ProductHighlights",
-        "F": "direction",
-        "G": "xhs_link",
-        "H": "outline_direction",
-        "I": "requirements",
-        "J": "notice",
-        "K": "sheet_token"
+        # "row": 1,
+        # "D": "brand_name",
+        # "E": "ProductHighlights",
+        # "F": "direction",
+        # "G": "xhs_link",
+        # "H": "outline_direction",
+        # "I": "requirements",
+        # "J": "notice",
+        # "K": "sheet_token"
     }
     
     # 递归处理字典
@@ -119,8 +119,8 @@ def main():
     主函数 - 转换JSON数据中的键
     """
     # 输入和输出文件名
-    input_filename = "spreadsheet_post_data_视频脚本创作-1.json"
-    output_filename = "spreadsheet_post_data_视频脚本创作_converted-1.json"
+    input_filename = "spreadsheet_post_data_图文大纲创作.json"
+    output_filename = "spreadsheet_post_data_图文大纲创作_converted.json"
     
     # 检查输入文件是否存在
     if not os.path.exists(input_filename):

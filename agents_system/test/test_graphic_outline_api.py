@@ -303,12 +303,12 @@ def main():
     # #视频大纲
     # api_url = "http://124.221.155.224:8843/api/video-outline-create"
     # #视频脚本
-    api_url = "http://124.221.155.224:8844/api/video-demo-create"
+    # api_url = "http://124.221.155.224:8844/api/video-demo-create"
     # #图文大纲
-    # api_url = "http://124.221.155.224:8847/graphic_outline/process-request"
+    api_url = "http://124.221.155.224:8847/graphic_outline/process-request"
     
     # 查找JSON文件
-    json_file_name = "spreadsheet_post_data_视频脚本创作_converted-1.json"
+    json_file_name = "spreadsheet_post_data_图文大纲创作_converted.json"
     possible_paths = [
         json_file_name,
         os.path.join("..", json_file_name),
