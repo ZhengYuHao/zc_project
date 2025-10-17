@@ -35,5 +35,12 @@
     "_generate_planting_captions_cp": "planting_captions_cp",
     "blogger_style_analysis": "blogger_style_analysis",
     "default": "default"
+  },
+  "model_call_logging": {
+    "enabled": true,
+    "feishu_bitable": {
+      "app_token": "YOUR_APP_TOKEN",
+      "table_id": "YOUR_TABLE_ID"
+    }
   }
 }
