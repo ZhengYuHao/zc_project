@@ -75,7 +75,7 @@ class DoubaoModel(BaseModel):
                     url, 
                     headers=self.headers, 
                     json=payload, 
-                    timeout=300
+                    timeout=600
                 )
                 
                 logger.info(f"Received response from Doubao API, status code: {response.status_code}")

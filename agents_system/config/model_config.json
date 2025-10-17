@@ -10,16 +10,20 @@
       "type": "doubao"
     },
     "planting_content": {
-      "type": "doubao"
+      "type": "doubao",
+      "model": "ep-20250813150635-26vg8"
     },
      "planting_captions": {
-      "type": "doubao" 
+      "type": "doubao",
+      "model": "ep-20250813150635-26vg8"
     },
     "planting_captions_cp": {
-      "type": "doubao"
+      "type": "doubao",
+      "model": "ep-20250813150635-26vg8"
     },
     "planting_content_cp": {
-      "type": "doubao"
+      "type": "doubao",
+      "model": "ep-20250813150635-26vg8"
     },
       "blogger_style_analysis": {
         "type": "doubao",

@@ -667,6 +667,7 @@ class GraphicOutlineAgent(BaseAgent):
             planting_captions_data = outline_data.get("planting_captions", "")
             self.logger.info(f"Parsed planting_captions:{planting_captions_data}")
             # 解析planting_captions JSON数据
+            import json
             try:
                 # 首先清理可能的代码块标记
                 cleaned_captions_data = planting_captions_data.strip()
