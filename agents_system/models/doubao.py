@@ -150,18 +150,39 @@ class DoubaoModel(BaseModel):
         logger.info(f"Starting text generation with Doubao model: {self.model_name}")
         logger.debug(f"Input prompt length: {len(prompt)}, content: {prompt}")
         
-        try:
-            result = await self._call_api(prompt, **kwargs)
-            generated_text = result["choices"][0]["message"]["content"]
+        # 检查是否是视觉模型的特殊调用（通过messages参数传递）
+        messages = kwargs.get("messages")
+        if messages:
+            # 视觉模型调用，使用传递的messages参数
+            logger.info("Calling Doubao model with special messages format (likely visual model)")
+            try:
+                result = await self._call_api(prompt, messages=messages)
+                generated_text = result["choices"][0]["message"]["content"]
+                
+                logger.info(f"Successfully generated text with visual model, length: {len(generated_text)}")
+                logger.debug(f"Generated text: {generated_text}")
+                
+                return generated_text
+            except Exception as e:
+                logger.error(f"Failed to generate text with visual model: {str(e)}")
+                raise
+        else:
+            # 普通文本模型调用
+            logger.info(f"Starting text generation with Doubao model: {self.model_name}")
+            logger.debug(f"Input prompt length: {len(prompt)}, content: {prompt}")
             
-            logger.info(f"Successfully generated text, length: {len(generated_text)}")
-            logger.debug(f"Generated text: {generated_text}")
-            
-            return generated_text
-            
-        except Exception as e:
-            logger.error(f"Failed to generate text with Doubao model: {str(e)}")
-            raise
+            try:
+                result = await self._call_api(prompt, **kwargs)
+                generated_text = result["choices"][0]["message"]["content"]
+                
+                logger.info(f"Successfully generated text, length: {len(generated_text)}")
+                logger.debug(f"Generated text: {generated_text}")
+                
+                return generated_text
+                
+            except Exception as e:
+                logger.error(f"Failed to generate text with Doubao model: {str(e)}")
+                raise
     
     async def generate_text_stream(self, prompt: str, **kwargs) -> AsyncGenerator[str, None]:
         """

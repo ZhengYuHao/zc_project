@@ -1,4 +1,4 @@
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union, List
 import asyncio
 
 from config.model_config import load_model_config
@@ -74,6 +74,37 @@ class ModelManager:
         
         # 记录模型调用
         await self.call_logger.log_call(task_type, prompt, response, **kwargs)
+        
+        return response
+    
+    async def call_model_with_messages(self, task_type: str, messages: List[Dict[str, Any]], **kwargs) -> str:
+        """
+        调用模型生成文本（支持视觉模型的特殊消息格式）
+        
+        Args:
+            task_type: 任务类型
+            messages: 消息列表，支持文本和图像
+            **kwargs: 其他参数
+            
+        Returns:
+            模型生成的文本
+        """
+        model = self.get_model_for_task(task_type)
+        
+        # 检查是否是视觉模型任务并且有特殊的消息格式
+        if task_type == "blogger_style_analysis" and isinstance(messages, list) and len(messages) > 0:
+            # 对于视觉模型，将messages作为特殊参数传递
+            # 我们需要将messages转换为模型可以理解的格式
+            content = messages[0].get("content", []) if isinstance(messages[0], dict) else str(messages)
+            prompt = f"视觉分析任务，消息内容：{str(content)}"
+            response = await model.generate_text(prompt, messages=messages, **kwargs)
+        else:
+            # 对于普通模型，将消息转换为文本提示
+            prompt = str(messages)
+            response = await model.generate_text(prompt, **kwargs)
+        
+        # 记录模型调用
+        await self.call_logger.log_call(task_type, str(messages), response, **kwargs)
         
         return response
     
