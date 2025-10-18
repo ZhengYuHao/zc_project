@@ -1534,7 +1534,9 @@ class GraphicOutlineAgent(BaseAgent):
             skill_5 = prompt_template.get("skills", {}).get("skill_5", "")
             
             # 构建输出格式
-            output_format = prompt_template.get("output_format", "").format(picture_number=picture_number)
+            output_format_template = prompt_template.get("output_format", "")
+            # 手动替换占位符以避免KeyError
+            output_format = output_format_template.replace('{picture_number}', str(picture_number)).replace('{content_direction}', '')
             
             # 构建限制
             restrictions = "\n".join(prompt_template.get("restrictions", []))
