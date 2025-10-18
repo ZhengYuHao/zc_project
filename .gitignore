@@ -88,3 +88,8 @@ test-results/
 # 系统目录
 dump/
 temp/
+
+### 生成的JSON数据文件 ###
+spreadsheet_post_data_*.json
+test_results_*.json
+bitable_data.json
