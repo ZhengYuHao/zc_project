@@ -10,21 +10,25 @@
       "type": "doubao"
     },
     "planting_content": {
-      "type": "doubao"
+      "type": "doubao",
+      "model": "ep-20250813150635-26vg8"
     },
      "planting_captions": {
-      "type": "doubao" 
+      "type": "doubao",
+      "model": "ep-20250813150635-26vg8"
     },
     "planting_captions_cp": {
-      "type": "doubao"
+      "type": "doubao",
+      "model": "ep-20250813150635-26vg8"
     },
     "planting_content_cp": {
-      "type": "doubao"
-    },
-    "blogger_style_analysis": {
       "type": "doubao",
-      "model": "ep-20250520143333-8ghr9"
-    }
+      "model": "ep-20250813150635-26vg8"
+    },
+      "blogger_style_analysis": {
+        "type": "doubao",
+        "model": "ep-20250520143333-8ghr9"
+      }
   },
   "task_model_mapping": {
     "graphic_outline": "graphic_outline",
@@ -35,5 +39,8 @@
     "_generate_planting_captions_cp": "planting_captions_cp",
     "blogger_style_analysis": "blogger_style_analysis",
     "default": "default"
+  },
+  "model_call_logging": {
+    "enabled": true
   }
 }

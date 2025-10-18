@@ -3,13 +3,17 @@ from typing import Callable, Awaitable
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from utils.logger import get_logger
-from core.request_context import generate_request_id, set_request_id
+from core.request_context import generate_request_id, set_request_id, get_request_id
+from models.model_call_logger import ModelCallLogger
 
 logger = get_logger(__name__)
 
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
     """为每个请求生成唯一ID并在响应中返回的中间件"""
+    
+    def __init__(self, app):
+        super().__init__(app)
     
     async def dispatch(
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
@@ -19,6 +23,9 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         
         # 设置请求ID到上下文
         set_request_id(request_id)
+        
+        # 清空当前请求的模型调用记录
+        ModelCallLogger.clear_current_calls()
         
         # 记录请求开始
         logger.info(f"开始处理请求 {request_id}: {request.method} {request.url}")
@@ -38,3 +45,6 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         finally:
             # 记录请求结束
             logger.info(f"请求 {request_id} 处理完成")
+            
+            # 清空当前请求的模型调用记录
+            ModelCallLogger.clear_current_calls()

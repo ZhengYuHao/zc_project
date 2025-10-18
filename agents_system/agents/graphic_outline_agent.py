@@ -23,6 +23,7 @@ from utils.cell_filler import CellFiller
 from utils.fetch_user_nickname import fetch_user_nickname
 from core.task_processor import task_processor
 from core.request_context import get_request_id
+from core.feishu_bitable_processor import process_feishu_record_cell
 
 
 class GraphicOutlineRequest(BaseModel):
@@ -81,6 +82,7 @@ class ProcessRequestInput(BaseModel):
     - ProductHighlights: 产品亮点，产品的核心卖点
     - outline_direction: 大纲方向，大纲制定的具体方向
     - blogger_link: 博主链接，参考的博主主页链接
+    - record_link: 记录链接，飞书多维表格的记录链接
     """
     direction: str
     requirements: str
@@ -90,6 +92,7 @@ class ProcessRequestInput(BaseModel):
     ProductHighlights: str
     outline_direction: str
     blogger_link: str
+    record_link: Optional[str] = None
     
     class Config:
         # 确保所有必需字段都经过验证
@@ -196,46 +199,116 @@ class GraphicOutlineAgent(BaseAgent):
             # 直接从请求体中获取原始数据
             import json
             body = await request.body()
+            request_data = {}  # 初始化request_data变量
             try:
                 request_data = json.loads(body.decode('utf-8')) if body else {}
             except json.JSONDecodeError:
                 self.logger.error(f"Invalid JSON in request body with request_id {request_id}")
-                return ProcessRequestResponse(
+                response = ProcessRequestResponse(
                     status="error",
                     error="Invalid JSON format",
                     request_id=request_id
                 )
+                
+                # 如果提供了record_link，则更新飞书多维表格记录
+                record_link = request_data.get("record_link") if request_data else None
+                if record_link:
+                    try:
+                        response_json = response.json()
+                        await process_feishu_record_cell(record_link, "图文大纲创作结果", response_json)
+                        self.logger.info(f"Successfully updated Feishu bitable record with outline for record_link: {record_link}")
+                    except Exception as e:
+                        self.logger.error(f"Failed to update Feishu bitable record with outline for record_link {record_link}: {str(e)}")
+                    
+                return response
 
             self.logger.info(f"Processing process_request API request with request_id {request_id}: {request_data}")
 
             # 硬编码验证必填字段
             missing_fields = []
             if not request_data.get("direction"):
-                missing_fields.append("direction")
+                missing_fields.append("创作方向-direction")
             if not request_data.get("requirements"):
-                missing_fields.append("requirements")
+                missing_fields.append("创作要求-requirements")
             if not request_data.get("product_name"):
-                missing_fields.append("product_name")
+                missing_fields.append("产品名称-product_name")
             if not request_data.get("ProductHighlights"):
-                missing_fields.append("ProductHighlights")
+                missing_fields.append("卖点信息-ProductHighlights")
             if not request_data.get("outline_direction"):
-                missing_fields.append("outline_direction")
+                missing_fields.append("大纲方向建议-outline_direction")
             if not request_data.get("blogger_link"):
-                missing_fields.append("blogger_link")
+                missing_fields.append("达人主页链接-blogger_link")
                 
             if missing_fields:
-                error_msg = f"Missing required fields: {', '.join(missing_fields)}"
+                error_msg = f"缺少必填参数: {', '.join(missing_fields)}"
                 self.logger.error(f"Validation error in process_request API with request_id {request_id}: {error_msg}")
-                return ProcessRequestResponse(
+                response = ProcessRequestResponse(
                     status="error",
                     error=error_msg,
                     request_id=request_id
                 )
+                
+                # 如果提供了record_link，则更新飞书多维表格记录
+                record_link = request_data.get("record_link")
+                if record_link:
+                    try:
+                        response_json = response.json()
+                        await process_feishu_record_cell(record_link, "图文大纲创作结果", response_json)
+                        self.logger.info(f"Successfully updated Feishu bitable record with error for record_link: {record_link}")
+                    except Exception as e:
+                        self.logger.error(f"Failed to update Feishu bitable record with error for record_link {record_link}: {str(e)}")
+                    
+                return response
 
             # 如果用户没有提交picture_number字段，默认设置为15张
             if "picture_number" not in request_data:
                 request_data["picture_number"] = 15
-
+            else:
+                # 验证picture_number必须是非0非负的正整数
+                try:
+                    picture_number = int(request_data["picture_number"])
+                    if picture_number <= 0:
+                        error_msg = "picture_number must be a positive integer greater than 0"
+                        self.logger.error(f"Validation error in process_request API with request_id {request_id}: {error_msg}")
+                        response = ProcessRequestResponse(
+                            status="error",
+                            error=error_msg,
+                            request_id=request_id
+                        )
+                        
+                        # 如果提供了record_link，则更新飞书多维表格记录
+                        record_link = request_data.get("record_link")
+                        if record_link:
+                            try:
+                                response_json = response.json()
+                                await process_feishu_record_cell(record_link, "图文大纲创作结果", response_json)
+                                self.logger.info(f"Successfully updated Feishu bitable record with error for record_link: {record_link}")
+                            except Exception as e:
+                                self.logger.error(f"Failed to update Feishu bitable record with error for record_link {record_link}: {str(e)}")
+                        
+                        return response
+                    request_data["picture_number"] = picture_number
+                except (ValueError, TypeError):
+                    error_msg = "picture_number must be a valid positive integer greater than 0"
+                    self.logger.error(f"Validation error in process_request API with request_id {request_id}: {error_msg}")
+                    response = ProcessRequestResponse(
+                        status="error",
+                        error=error_msg,
+                        request_id=request_id
+                    )
+                    
+                    # 如果提供了record_link，则更新飞书多维表格记录
+                    record_link = request_data.get("record_link")
+                    if record_link:
+                        try:
+                            response_json = response.json()
+                            await process_feishu_record_cell(record_link, "图文大纲创作结果", response_json)
+                            self.logger.info(f"Successfully updated Feishu bitable record with error for record_link: {record_link}")
+                        except Exception as e:
+                            self.logger.error(f"Failed to update Feishu bitable record with error for record_link {record_link}: {str(e)}")
+                    
+                    return response
+            
             # 调用process_request方法
             result = await self.process_request(request_data)
             
@@ -249,16 +322,71 @@ class GraphicOutlineAgent(BaseAgent):
                 request_id=request_id
             )
             
+            # 如果提供了record_link，则更新飞书多维表格记录
+            record_link = request_data.get("record_link")
+            if record_link:
+                try:
+                    # 获取并记录模型调用日志
+                    try:
+                        from models.model_call_logger import ModelCallLogger
+                        import json
+                        model_calls = ModelCallLogger.get_current_calls()
+                        if model_calls:
+                            model_calls_json = json.dumps(model_calls, ensure_ascii=False, indent=2)
+                            await process_feishu_record_cell(record_link, "模型调用日志", model_calls_json)
+                            self.logger.info(f"Successfully updated model call logs for record_link: {record_link}")
+                    except Exception as e:
+                        self.logger.error(f"Failed to update model call logs for record_link {record_link}: {str(e)}")
+                        
+                    # 只返回电子表格链接
+                    spreadsheet_info = result.get("spreadsheet", {})
+                    if spreadsheet_info and spreadsheet_info.get("status") == "success":
+                        spreadsheet_token = spreadsheet_info.get("spreadsheet_token", "")
+                        # 构造完整的电子表格URL
+                        spreadsheet_url = f"https://dkke3lyh7o.feishu.cn/sheets/{spreadsheet_token}"
+                        await process_feishu_record_cell(record_link, "图文大纲创作结果", spreadsheet_url)
+                        self.logger.info(f"Successfully updated Feishu bitable record with spreadsheet URL for record_link: {record_link}")
+                    else:
+                        # 如果没有成功创建电子表格，则返回完整响应
+                        response_json = response.json()
+                        await process_feishu_record_cell(record_link, "图文大纲创作结果", response_json)
+                        self.logger.info(f"Successfully updated Feishu bitable record with full response for record_link: {record_link}")
+                except Exception as e:
+                    error_msg = str(e)
+                    self.logger.error(f"Failed to update Feishu bitable record for record_link {record_link}: {error_msg}")
+                    # 不要中断主流程，继续执行
+            
             self.logger.info(f"Successfully processed process_request API request with request_id {request_id}")
             return response
             
         except Exception as e:
-            self.logger.error(f"Error processing process_request API request with request_id {request_id}: {str(e)}")
-            return ProcessRequestResponse(
+            # 获取完整的堆栈跟踪信息
+            import traceback
+            error_traceback = traceback.format_exc()
+            error_msg = str(e)
+            self.logger.error(f"Error processing process_request API request with request_id {request_id}: {error_msg}\nFull traceback: {error_traceback}")
+            
+            error_response = ProcessRequestResponse(
                 status="error",
-                error=str(e),
+                error=f"{error_msg} (request_id: {request_id})",
                 request_id=request_id
             )
+            
+            # 如果提供了record_link，则尝试更新飞书多维表格记录（即使出错也要记录）
+            try:
+                record_link = request_data.get("record_link") if request_data else None
+                if record_link:
+                    # 将错误响应转换为JSON字符串格式
+                    error_response_json = error_response.json()
+                    # 更新飞书多维表格记录
+                    await process_feishu_record_cell(record_link, "图文大纲创作结果", error_response_json)
+                    self.logger.info(f"Successfully updated Feishu bitable record with error for record_link: {record_link}")
+            except Exception as update_error:
+                import traceback
+                update_error_traceback = traceback.format_exc()
+                self.logger.error(f"Failed to update Feishu bitable record with error for record_link {record_link}: {str(update_error)}\nFull traceback: {update_error_traceback}")
+            
+            return error_response
     
     async def process_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -279,9 +407,18 @@ class GraphicOutlineAgent(BaseAgent):
             # 并发执行七个任务
             task_results = await task_processor.execute_tasks(request)
             self.logger.info(f"task_results graphic outline request{task_results}")
+            
+            # 提取record_link（如果存在）
+            record_link = request.get("record_link", "")
+            
             # 汇总任务结果并进行下一步处理
             processed_data = await self._aggregate_and_process(task_results, request)
             self.logger.info(f"Processing graphic outline request{processed_data}")
+            
+            # 将record_link添加到processed_data中
+            if record_link:
+                processed_data["record_link"] = record_link
+                
             direction = processed_data.get("direction", "")
             # 使用正则表达式匹配方向类型
             # 匹配包含"种草"或"vlog"的内容
@@ -315,6 +452,8 @@ class GraphicOutlineAgent(BaseAgent):
             
             # 创建飞书电子表格
             blogger_link = request.get("blogger_link", "")
+            record_link = request.get("record_link", "")
+            
             # 从链接中提取userUuid（最后一部分）
             user_uuid = blogger_link.rstrip('/').split('/')[-1] if blogger_link else "默认主题"
             
@@ -326,7 +465,8 @@ class GraphicOutlineAgent(BaseAgent):
             
             spreadsheet_result = await self.create_feishu_sheet({
                 "topic": user_uuid,
-                "outline_data": processed_data
+                "outline_data": processed_data,
+                "record_link": record_link
             })
             
             result = {
@@ -466,18 +606,14 @@ class GraphicOutlineAgent(BaseAgent):
                 "B5": "",  
                 "B6": "",  
                 "B7": "",  
-                "B8": outline_data.get("planting_captions", ""),  
-                "B9": outline_data.get("sections", {}).get("main_topic", ""),  
+                "B8": "",
+                "B9": "",
                 "C2": "",  
                 "D6": "",  
                 "E2": "",  
                 "F6": "",  
             }
 
-            # 测试种草图文规划生成
-            # planting_content = await self._generate_planting_content(outline_data)
-            # self.logger.info("Generated planting content:")
-            # self.logger.info(planting_content[:-1])
 
             # 解析图文规划内容
             planting_content = outline_data.get("planting_content", "")
@@ -487,16 +623,33 @@ class GraphicOutlineAgent(BaseAgent):
             if planting_content:
                 # 首先尝试清理可能的代码块标记
                 cleaned_content = planting_content.strip()
-                if cleaned_content.startswith("```") and cleaned_content.endswith("```"):
+                
+                # 处理可能存在的多重代码块标记
+                # 循环剥离外层的代码块标记，直到无法再剥离为止
+                while cleaned_content.startswith("```") and cleaned_content.endswith("```"):
                     # 提取代码块中的内容
                     lines = cleaned_content.split('\n')
                     if len(lines) >= 3:
                         # 去掉第一行和最后一行（代码块标记）
                         cleaned_content = '\n'.join(lines[1:-1]).strip()
+                    else:
+                        break  # 防止无限循环
+                
+                # 处理只有开头标记没有结尾标记的情况
+                if cleaned_content.startswith("```"):
+                    lines = cleaned_content.split('\n')
+                    if len(lines) >= 2:
+                        cleaned_content = '\n'.join(lines[1:]).strip()
+                
+                # 处理可能存在的语言标识（如```json）
+                if cleaned_content.startswith("json"):
+                    lines = cleaned_content.split('\n')
+                    if len(lines) >= 2:
+                        cleaned_content = '\n'.join(lines[1:]).strip()
                 
                 # 检查是否是JSON格式的输出
-                if cleaned_content.startswith('{'):
-                    self.logger.info(f"cleaned_content spreadsheet data for outline_data: {cleaned_content}")
+                if cleaned_content.startswith('{') and cleaned_content.endswith('}'):
+                    self.logger.info(f"Attempting to parse JSON content, length: {len(cleaned_content)}")
                     try:
                         import json
                         planting_json = json.loads(cleaned_content)
@@ -508,11 +661,15 @@ class GraphicOutlineAgent(BaseAgent):
                                 "remark": img.get("remark", ""),
                                 "caption": ""
                             })
-                    except json.JSONDecodeError:
-                        # 如果JSON解析失败，回退到原来的解析方法
+                        self.logger.info(f"Successfully parsed JSON format planting content with {len(planting_data)} items")
+                    except json.JSONDecodeError as e:
+                        # 如果JSON解析失败，记录错误并回退到原来的解析方法
+                        self.logger.error(f"Failed to parse planting content as JSON: {str(e)}")
+                        self.logger.error(f"Content that failed to parse: {cleaned_content[:-1]}...")
                         planting_data = parse_planting_content(planting_content)
                 else:
                     # 使用原来的解析方法
+                    self.logger.info("Using regex parser for planting content")
                     planting_data = parse_planting_content(planting_content)
             else:
                 # 内容为空时使用原来的解析方法
@@ -526,19 +683,156 @@ class GraphicOutlineAgent(BaseAgent):
                 self.logger.info(f"    Caption: {data['caption']}")
                 self.logger.info(f"    Remark: {data['remark']}")
 
-            # 测试种草配文生成
-            # planting_captions = await self._generate_planting_captions(outline_data, planting_content)
-            # self.logger.info("\nGenerated planting captions:")
-            # self.logger.info(planting_captions[:-1])
-
-            # 解析配文内容
-            captions_data = parse_planting_captions(outline_data.get("planting_captions",""))
-            self.logger.info("Parsed captions data:")
-            self.logger.info(f"  Titles: {captions_data['titles']}")
-            self.logger.info(f"  Body length: {captions_data['body']}")
-            self.logger.info(f"  Hashtags: {captions_data['hashtags']}")
             
             # 更新单元格数据
+            planting_captions_data = outline_data.get("planting_captions", "")
+            self.logger.info(f"Parsed planting_captions:{planting_captions_data}")
+            # 解析planting_captions JSON数据
+            import json
+            try:
+                # 首先清理可能的代码块标记
+                cleaned_captions_data = planting_captions_data.strip()
+                
+                # 处理可能存在的多重代码块标记
+                while cleaned_captions_data.startswith("```") and cleaned_captions_data.endswith("```"):
+                    # 提取代码块中的内容
+                    lines = cleaned_captions_data.split('\n')
+                    if len(lines) >= 3:
+                        # 去掉第一行和最后一行（代码块标记）
+                        cleaned_captions_data = '\n'.join(lines[1:-1]).strip()
+                    else:
+                        break  # 防止无限循环
+                
+                # 处理只有开头标记没有结尾标记的情况
+                if cleaned_captions_data.startswith("```"):
+                    lines = cleaned_captions_data.split('\n')
+                    if len(lines) >= 2:
+                        cleaned_captions_data = '\n'.join(lines[1:]).strip()
+                
+                # 处理可能存在的语言标识（如```json）
+                if cleaned_captions_data.startswith("json"):
+                    lines = cleaned_captions_data.split('\n')
+                    if len(lines) >= 2:
+                        cleaned_captions_data = '\n'.join(lines[1:]).strip()
+                
+                # 尝试直接解析
+                parsed_captions = json.loads(cleaned_captions_data)
+                self.logger.info("Successfully parsed planting_captions as JSON")
+                
+                # 提取captions内容
+                if isinstance(parsed_captions, dict) and "captions" in parsed_captions:
+                    captions_data = parsed_captions.get("captions", {})
+                    # 构造B8内容，包含标题和正文
+                    titles = captions_data.get("titles", [])
+                    content = captions_data.get("content", "")
+                    ending = captions_data.get("ending", "")
+                    
+                    # 格式化标题内容
+                    titles_text = "\n".join([f"标题{i+1}：{title}" for i, title in enumerate(titles)])
+                    
+                    # 组合B8内容
+                    b8_content = f"{titles_text}\n正文：{content}\n收尾：{ending}"
+                else:
+                    b8_content = parsed_captions.get("content", "") if parsed_captions else ""
+                
+                # 提取tags内容
+                if isinstance(parsed_captions, dict) and "tags" in parsed_captions:
+                    tags_data = parsed_captions.get("tags", [])
+                    if isinstance(tags_data, list):
+                        b9_tags = " ".join(tags_data)
+                    else:
+                        b9_tags = str(tags_data)
+                else:
+                    b9_tags = parsed_captions.get("tags", "") if parsed_captions else ""
+            except (json.JSONDecodeError, AttributeError, TypeError) as e:
+                # 如果解析失败，尝试修复JSON字符串
+                self.logger.error(f"Error parsing planting_captions JSON: {e}")
+                try:
+                    # 尝试修复常见的JSON问题
+                    fixed_data = cleaned_captions_data
+                    # 替换可能导致问题的控制字符
+                    fixed_data = ''.join(ch if ord(ch) >= 32 or ch in '\n\r\t' else ' ' for ch in fixed_data)
+                    # 尝试解析修复后的数据
+                    parsed_captions = json.loads(fixed_data)
+                    self.logger.info("Successfully parsed fixed planting_captions JSON")
+                    
+                    # 提取captions内容
+                    if isinstance(parsed_captions, dict) and "captions" in parsed_captions:
+                        captions_data = parsed_captions.get("captions", {})
+                        # 构造B8内容，包含标题和正文
+                        titles = captions_data.get("titles", [])
+                        content = captions_data.get("content", "")
+                        ending = captions_data.get("ending", "")
+                        
+                        # 格式化标题内容
+                        titles_text = "\n".join([f"标题{i+1}：{title}" for i, title in enumerate(titles)])
+                        
+                        # 组合B8内容
+                        b8_content = f"{titles_text}\n正文：{content}\n收尾：{ending}"
+                    else:
+                        b8_content = parsed_captions.get("content", "") if parsed_captions else ""
+                    
+                    # 提取tags内容
+                    if isinstance(parsed_captions, dict) and "tags" in parsed_captions:
+                        tags_data = parsed_captions.get("tags", [])
+                        if isinstance(tags_data, list):
+                            b9_tags = " ".join(tags_data)
+                        else:
+                            b9_tags = str(tags_data)
+                    else:
+                        b9_tags = parsed_captions.get("tags", "") if parsed_captions else ""
+                except (json.JSONDecodeError, AttributeError, TypeError) as e2:
+                    # 如果仍然失败，尝试使用正则表达式提取
+                    self.logger.error(f"Error parsing fixed planting_captions JSON: {e2}")
+                    try:
+                        import re
+                        # 使用正则表达式提取titles
+                        titles_match = re.search(r'"titles"\s*:\s*(\[[^\]]*\])', cleaned_captions_data)
+                        titles = []
+                        if titles_match:
+                            titles_str = titles_match.group(1)
+                            # 简单解析标题数组
+                            # 支持带转义字符的字符串匹配
+                            titles = re.findall(r'"((?:[^"\\]|\\.)*)"', titles_str)
+                            # 处理转义字符
+                            titles = [title.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t') for title in titles]
+                        
+                        # 使用正则表达式提取content
+                        content_match = re.search(r'"content"\s*:\s*"((?:[^"\\]|\\.)*)"', cleaned_captions_data)
+                        content = content_match.group(1) if content_match else ""
+                        # 处理转义字符
+                        content = content.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t')
+                        
+                        # 使用正则表达式提取ending
+                        ending_match = re.search(r'"ending"\s*:\s*"((?:[^"\\]|\\.)*)"', cleaned_captions_data)
+                        ending = ending_match.group(1) if ending_match else ""
+                        # 处理转义字符
+                        ending = ending.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t')
+                        
+                        # 使用正则表达式提取tags
+                        tags_match = re.search(r'"tags"\s*:\s*(\[[^\]]*\])', cleaned_captions_data)
+                        tags = []
+                        if tags_match:
+                            tags_str = tags_match.group(1)
+                            # 简单解析标签数组
+                            # 支持带转义字符的字符串匹配
+                            tags = re.findall(r'"((?:[^"\\]|\\.)*)"', tags_str)
+                            # 处理转义字符
+                            tags = [tag.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t') for tag in tags]
+                        
+                        # 格式化标题内容
+                        titles_text = "\n".join([f"标题{i+1}：{title}" for i, title in enumerate(titles)])
+                        
+                        # 组合B8内容
+                        b8_content = f"{titles_text}\n正文：{content}\n收尾：{ending}"
+                        
+                        # 组合B9标签
+                        b9_tags = " ".join(tags)
+                    except Exception as e3:
+                        # 如果所有方法都失败，使用原始数据
+                        self.logger.error(f"Error parsing planting_captions with regex: {e3}")
+                        b8_content = planting_captions_data
+                        b9_tags = ""
             cell_data.update({
                 "B1": "",  
                 "B2": "",  
@@ -547,8 +841,8 @@ class GraphicOutlineAgent(BaseAgent):
                 "B5": "",  
                 "B6": "",  
                 "B7": "",  
-                "B8": outline_data.get("planting_captions", ""),  
-                "B9": outline_data.get("sections", {}).get("main_topic", ""),  
+                "B8": b8_content,  
+                "B9": b9_tags,  
                 "C2": "",  
                 "D6": "",  
                 "E2": "",  
@@ -576,7 +870,8 @@ class GraphicOutlineAgent(BaseAgent):
                     
                     row += 1
             
-            await self._set_cell_format(spreadsheet_token, sheet_id, tenant_token, ["B1", "B2"])
+            # 不再设置单元格格式，使用默认格式
+            # await self._set_cell_format(spreadsheet_token, sheet_id, tenant_token, ["B1", "B2"])
             
             # 使用fill_cells_in_sheet方法填充数据
             result = await self.fill_cells_in_sheet(spreadsheet_token, sheet_id, cell_data)
@@ -590,101 +885,6 @@ class GraphicOutlineAgent(BaseAgent):
         except Exception as e:
             self.logger.error(f"Error populating spreadsheet data for spreadsheet {spreadsheet_token}: {str(e)}")
             raise
-    
-    async def _set_cell_format(self, spreadsheet_token: str, sheet_id: str, tenant_token: str, cell_refs: List[str]) -> bool:
-        """
-        设置单元格格式，确保字体一致性
-        
-        Args:
-            spreadsheet_token: 电子表格token
-            sheet_id: 工作表ID
-            tenant_token: 访问令牌
-            cell_refs: 单元格引用列表，如 ["A1", "B2"]
-            
-        Returns:
-            是否设置成功
-        """
-        try:
-            headers = {
-                "Authorization": f"Bearer {tenant_token}",
-                "Content-Type": "application/json; charset=utf-8"
-            }
-            
-            # 为每个单元格分别设置格式
-            for cell_ref in cell_refs:
-                format_payload = {
-                    "appendStyle": {
-                        "range": f"{sheet_id}!{cell_ref}:{cell_ref}",
-                        "style": {
-                            "font": {
-                                "bold": False,
-                                "italic": False,
-                                "fontSize": 12,
-                                "color": "#000000"  # 黑色字体
-                            },
-                            "horizontalAlignment": "CENTER"  # 居中对齐
-                        }
-                    }
-                }
-                
-                # 发送格式设置请求
-                format_url = f"https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/style"
-                
-                self.logger.info(f"Setting cell format for {cell_ref}")
-                self.logger.info(f"Format URL: {format_url}")
-                self.logger.info(f"Format payload: {format_payload}")
-                
-                async with httpx.AsyncClient() as client:
-                    format_response = await client.put(format_url, headers=headers, json=format_payload, timeout=self.timeout)
-                    self.logger.info(f"Format response status: {format_response.status_code}")
-                    self.logger.info(f"Format response headers: {dict(format_response.headers)}")
-                    
-                    # 尝试解析响应内容
-                    try:
-                        response_text = format_response.text
-                        self.logger.info(f"Format response text: {response_text}")
-                        
-                        format_result = format_response.json()
-                        self.logger.info(f"Format response JSON: {format_result}")
-                        
-                        if format_result.get("code") != 0:
-                            self.logger.warning(f"API returned non-zero code for {cell_ref}: {format_result.get('code')}")
-                            self.logger.warning(f"API message: {format_result.get('msg', 'No message')}")
-                    except Exception as parse_error:
-                        self.logger.error(f"Error parsing response for {cell_ref}: {str(parse_error)}")
-                        self.logger.info(f"Raw response content: {response_text}")
-                    
-                    # 检查状态码
-                    if format_response.status_code != 200:
-                        self.logger.warning(f"Non-200 status code for {cell_ref}: {format_response.status_code}")
-                        return False
-                    
-                    # 检查响应内容
-                    try:
-                        format_result = format_response.json()
-                        if format_result.get("code") != 0:
-                            self.logger.warning(f"Failed to set cell format for {cell_ref}: {format_result.get('msg')}")
-                            return False
-                    except:
-                        self.logger.warning(f"Failed to parse JSON response for {cell_ref}")
-                        return False
-            
-            self.logger.info(f"Successfully set format for cells: {cell_refs}")
-            return True
-            
-        except httpx.HTTPStatusError as e:
-            self.logger.error(f"HTTP error setting cell format: {str(e)}")
-            self.logger.error(f"Request info: {e.request}")
-            if e.response:
-                self.logger.error(f"Response info: {e.response}")
-                self.logger.error(f"Response text: {e.response.text}")
-            return False
-        except Exception as e:
-            self.logger.warning(f"Error setting cell format: {str(e)}")
-            import traceback
-            self.logger.error(f"Traceback: {traceback.format_exc()}")
-            # 即使格式设置失败，也不中断数据填充流程
-            return False
     
     async def create_feishu_sheet(self, request: Dict[str, Any]) -> dict:
         """
@@ -705,14 +905,17 @@ class GraphicOutlineAgent(BaseAgent):
             # 从请求中提取数据
             topic = request.get("topic", "默认主题")
             outline_data = request.get("outline_data", {})
+            record_link = request.get("record_link", None)
+            
+            # 如果提供了record_link，则记录日志
+            if record_link:
+                self.logger.info(f"Received record_link: {record_link}")
             
             # 基于模板创建飞书电子表格
             spreadsheet_token, sheet_id = await self._create_spreadsheet_from_template(topic)
             
             # 填充数据到电子表格
             await self._populate_spreadsheet_data(spreadsheet_token, sheet_id, outline_data)
-            
-            
             
             # 设置电子表格权限为任何人可编辑
             self.logger.info("Setting spreadsheet permissions to anyone can edit")
@@ -729,16 +932,60 @@ class GraphicOutlineAgent(BaseAgent):
                 "request_id": request_id
             }
             
+            # 如果提供了record_link，则更新飞书多维表格记录
+            if record_link:
+                try:
+                    # 将结果转换为JSON字符串格式
+                    result_json = json.dumps(result, ensure_ascii=False)
+                    # 更新飞书多维表格记录
+                    await process_feishu_record_cell(record_link, "图文大纲创作结果", result_json)
+                    self.logger.info(f"Successfully updated Feishu bitable record for record_link: {record_link}")
+                except DocumentVersionError as e:
+                    # 特别处理文档版本冲突错误
+                    error_msg = f"Document version conflict: {str(e)}"
+                    self.logger.warning(f"Failed to update Feishu bitable record due to version conflict for record_link {record_link}: {error_msg}")
+                except httpx.HTTPStatusError as e:
+                    # 处理HTTP状态错误
+                    error_msg = f"HTTP status error {e.response.status_code}: {e.response.text}"
+                    self.logger.error(f"HTTP error when updating Feishu bitable record for record_link {record_link}: {error_msg}")
+                except httpx.RequestError as e:
+                    # 处理请求错误
+                    error_msg = f"Request error: {str(e)}"
+                    self.logger.error(f"Network error when updating Feishu bitable record for record_link {record_link}: {error_msg}")
+                except json.JSONDecodeError as e:
+                    # 处理JSON编码错误
+                    error_msg = f"JSON encoding error: {str(e)}"
+                    self.logger.error(f"Failed to encode result to JSON when updating Feishu bitable record for record_link {record_link}: {error_msg}")
+                except Exception as e:
+                    # 处理其他所有未预期的错误
+                    error_msg = f"Unexpected error: {str(e)}"
+                    self.logger.error(f"Unexpected error when updating Feishu bitable record for record_link {record_link}: {error_msg}")
+                    # 不要中断主流程，继续执行
+            
             self.logger.info(f"Successfully created Feishu sheet: {spreadsheet_token}")
             return result
             
         except Exception as e:
             self.logger.error(f"Error creating Feishu sheet: {str(e)}")
-            return {
+            error_result = {
                 "status": "error",
                 "error": str(e),
                 "request_id": request_id
             }
+            
+            # 如果提供了record_link，则尝试更新飞书多维表格记录（即使出错也要记录）
+            try:
+                record_link = request.get("record_link") if 'request' in locals() else None
+                if record_link:
+                    # 将错误结果转换为JSON字符串格式
+                    error_result_json = json.dumps(error_result, ensure_ascii=False)
+                    # 更新飞书多维表格记录
+                    await process_feishu_record_cell(record_link, "图文大纲创作结果", error_result_json)
+                    self.logger.info(f"Successfully updated Feishu bitable record with error for record_link: {record_link}")
+            except Exception as update_error:
+                self.logger.error(f"Failed to update Feishu bitable record with error for record_link {record_link}: {str(update_error)}")
+            
+            return error_result
     
     async def _set_spreadsheet_public_editable(self, spreadsheet_token: str) -> bool:
         """
@@ -879,6 +1126,7 @@ class GraphicOutlineAgent(BaseAgent):
             "picture_number": request_data.get("picture_number", ""),
             "ProductHighlights": request_data.get("ProductHighlights", ""),
             "outline_direction": request_data.get("outline_direction",""),
+            "record_link": request_data.get("record_link", ""),  # 添加record_link字段
             "sections": {},  # 使用字典映射方式存储
             "total_words": 0,
             "estimated_time": "5分钟"
@@ -899,9 +1147,9 @@ class GraphicOutlineAgent(BaseAgent):
             #达人风格
             "blogger_style_extractor": "blogger_style",
             #产品背书
-            "product_endorsement_extractor": "product_endorsement",
+            # "product_endorsement_extractor": "product_endorsement",
             #话题
-            "topic_extractor": "main_topic"
+            # "topic_extractor": "main_topic"
         }
         
         # 统一处理所有提取器数据
@@ -913,7 +1161,7 @@ class GraphicOutlineAgent(BaseAgent):
         processed_outline["sections"] = sections
         processed_outline["total_words"] = sum(len(str(content)) for content in sections.values())
         
-        self.logger.info("Successfully aggregated and processed task results")
+        self.logger.info(f"Successfully aggregated and processed task results{processed_outline}")
         return processed_outline
 
     async def _generate_planting_captions(self, processed_data: Dict[str, Any], planting_content: str, user_prompt: Optional[str] = None) -> str:
@@ -1066,13 +1314,66 @@ class GraphicOutlineAgent(BaseAgent):
             # 使用用户提示词或系统提示词
             prompt = user_prompt if user_prompt else system_prompt
             
+            # 添加日志记录输入参数
+            self.logger.info(f"[_generate_planting_captions] Calling model with task_type: _generate_planting_captions")
+            self.logger.debug(f"[_generate_planting_captions] Prompt: {prompt}")
+            self.logger.debug(f"[_generate_planting_captions] Processed data: {processed_data}")
+            self.logger.debug(f"[_generate_planting_captions] Planting content: {planting_content}")
+            
             # 调用模型
-            captions_content = await self.model_manager.call_model("_generate_planting_captions", prompt)
+            captions_content = await self.model_manager.call_model(
+                "_generate_planting_captions", 
+                prompt,
+                response_format={"type": "json_object"}
+            )
+            
+            # 添加日志记录模型返回结果
+            self.logger.info(f"[_generate_planting_captions] Model call successful")
+            self.logger.debug(f"[_generate_planting_captions] Model response: {captions_content}")
+            
+            # 尝试解析返回内容
+            try:
+                import json
+                parsed_content = json.loads(captions_content)
+                self.logger.debug(f"[_generate_planting_captions] Parsed JSON response: {parsed_content}")
+            except json.JSONDecodeError as je:
+                self.logger.warning(f"[_generate_planting_captions] Failed to parse model response as JSON: {je}")
+            
+        
             return captions_content
             
         except Exception as e:
             self.logger.error(f"Error generating planting captions: {str(e)}")
-            return "种草配文生成失败"
+            # 添加堆栈跟踪信息
+            import traceback
+            self.logger.error(f"Full traceback: {traceback.format_exc()}")
+            return json.dumps({"content": "种草配文生成失败", "tags": ""}, ensure_ascii=False)
+    
+    def _extract_tags_from_content(self, content: str) -> Dict[str, str]:
+        """
+        从内容中提取标签部分
+        
+        Args:
+            content: 包含标签的完整内容
+            
+        Returns:
+            包含content和tags字段的字典
+        """
+        # 提取标签内容
+        tags_pattern = r"- \*\*标签\*\*：(.*)"
+        tags_match = re.search(tags_pattern, content)
+        tags_content = ""
+        
+        if tags_match:
+            tags_content = tags_match.group(1).strip()
+            # 从原内容中移除标签行
+            content = re.sub(tags_pattern, "", content).strip()
+        
+        # 构造返回结果，包含内容和标签
+        return {
+            "content": content,
+            "tags": tags_content
+        }
     
     async def _generate_planting_captions_cp(self, processed_data: Dict[str, Any], planting_content: str, user_prompt: Optional[str] = None) -> str:
         """
@@ -1148,14 +1449,41 @@ class GraphicOutlineAgent(BaseAgent):
             # 使用用户提示词或系统提示词
             prompt = user_prompt if user_prompt else system_prompt
             
-            # 调用模型
-            captions_content = await self.model_manager.call_model("_generate_planting_captions_cp", prompt)
+            # 添加日志记录输入参数
+            self.logger.info(f"[_generate_planting_captions_cp] Calling model with task_type: _generate_planting_captions_cp")
+            self.logger.debug(f"[_generate_planting_captions_cp] Prompt: {prompt}")
+            self.logger.debug(f"[_generate_planting_captions_cp] Processed data: {processed_data}")
+            self.logger.debug(f"[_generate_planting_captions_cp] Planting content: {planting_content}")
+            
+            # 调用模型，强制JSON输出
+            captions_content = await self.model_manager.call_model(
+                "_generate_planting_captions_cp", 
+                prompt,
+                response_format={"type": "json_object"}
+            )
+            
+            # 添加日志记录模型返回结果
+            self.logger.info(f"[_generate_planting_captions_cp] Model call successful")
+            self.logger.debug(f"[_generate_planting_captions_cp] Model response: {captions_content}")
+            
+            # 尝试解析返回内容
+            try:
+                import json
+                parsed_content = json.loads(captions_content)
+                self.logger.debug(f"[_generate_planting_captions_cp] Parsed JSON response: {parsed_content}")
+            except json.JSONDecodeError as je:
+                self.logger.warning(f"[_generate_planting_captions_cp] Failed to parse model response as JSON: {je}")
+            
+            # 返回JSON格式的配文内容
             return captions_content
             
         except Exception as e:
             self.logger.error(f"Error generating planting captions: {str(e)}")
-            return "测评配文生成失败"
-
+            # 添加堆栈跟踪信息
+            import traceback
+            self.logger.error(f"Full traceback: {traceback.format_exc()}")
+            return json.dumps({"content": "测评配文生成失败", "tags": ""}, ensure_ascii=False)
+    
     async def _generate_planting_content(self, processed_data: Dict[str, Any], user_prompt: Optional[str] = None) -> str:
         """
         生成种草图文规划内容
@@ -1173,7 +1501,7 @@ class GraphicOutlineAgent(BaseAgent):
             ProductHighlights = processed_data.get("ProductHighlights", "")  # 使用新的字段名
             # 从sections中提取目标人群和卖点信息
             sections = processed_data.get("sections", {})
-            requirements = processed_data.get("requirements", "")  # 内容方向建议
+            requirements = processed_data.get("requirements", "")  # 内츠方向建议
             notice = processed_data.get("notice", "")  # 注意事项
             picture_number = processed_data.get("picture_number", 6)  # 图片数量，默认为6
             outline_direction = processed_data.get("outline_direction", "")
@@ -1246,16 +1574,37 @@ class GraphicOutlineAgent(BaseAgent):
             # 使用用户提示词或系统提示词
             prompt = user_prompt if user_prompt else system_prompt
             
+            # 添加日志记录输入参数
+            self.logger.info(f"[_generate_planting_content] Calling model with task_type: _generate_planting_content")
+            self.logger.debug(f"[_generate_planting_content] Prompt: {prompt}")
+            self.logger.debug(f"[_generate_planting_content] Processed data: {processed_data}")
+            
             # 调用模型时添加response_format参数，要求JSON格式输出
             planting_content = await self.model_manager.call_model(
                 "_generate_planting_content", 
                 prompt, 
                 response_format={"type": "json_object"}
             )
+            
+            # 添加日志记录模型返回结果
+            self.logger.info(f"[_generate_planting_content] Model call successful")
+            self.logger.debug(f"[_generate_planting_content] Model response: {planting_content}")
+            
+            # 尝试解析返回内容
+            try:
+                import json
+                parsed_content = json.loads(planting_content)
+                self.logger.debug(f"[_generate_planting_content] Parsed JSON response: {parsed_content}")
+            except json.JSONDecodeError as je:
+                self.logger.warning(f"[_generate_planting_content] Failed to parse model response as JSON: {je}")
+            
             return planting_content
             
         except Exception as e:
             self.logger.error(f"Error generating planting content: {str(e)}")
+            # 添加堆栈跟踪信息
+            import traceback
+            self.logger.error(f"Full traceback: {traceback.format_exc()}")
             return "种草图文规划生成失败"
     async def _generate_planting_content_cp(self, processed_data: Dict[str, Any], user_prompt: Optional[str] = None) -> str:
         """
@@ -1274,7 +1623,7 @@ class GraphicOutlineAgent(BaseAgent):
             ProductHighlights = processed_data.get("ProductHighlights", "")  # 使用新的字段名
             # 从sections中提取目标人群和卖点信息
             sections = processed_data.get("sections", {})
-            requirements = processed_data.get("requirements", "")  # 内용方向建议
+            requirements = processed_data.get("requirements", "")  # 内茨方向建议
             notice = processed_data.get("notice", "")  # 注意事项
             picture_number = processed_data.get("picture_number", 6)  # 图片数量，默认为6
             outline_direction = processed_data.get("outline_direction", "")
@@ -1307,7 +1656,9 @@ class GraphicOutlineAgent(BaseAgent):
             skill_3 = prompt_template.get("skills", {}).get("skill_3", "")
             
             # 构建输出格式
-            output_format = prompt_template.get("output_format", "").format(picture_number=picture_number)
+            output_format_template = prompt_template.get("output_format", "")
+            # 手动替换占位符以避免KeyError
+            output_format = output_format_template.replace('{picture_number}', str(picture_number)).replace('{content_direction}', '')
             
             # 构建限制
             restrictions = "\n".join(prompt_template.get("restrictions", []))
@@ -1345,21 +1696,38 @@ class GraphicOutlineAgent(BaseAgent):
             # 使用用户提示词或系统提示词
             prompt = user_prompt if user_prompt else system_prompt
             
+            # 添加日志记录输入参数
+            self.logger.info(f"[_generate_planting_content_cp] Calling model with task_type: _generate_planting_content_cp")
+            self.logger.debug(f"[_generate_planting_content_cp] Prompt: {prompt}")
+            self.logger.debug(f"[_generate_planting_content_cp] Processed data: {processed_data}")
+            
             # 调用模型时添加response_format参数，要求JSON格式输出
             planting_content = await self.model_manager.call_model(
                 "_generate_planting_content_cp", 
                 prompt, 
                 response_format={"type": "json_object"}
             )
+            
+            # 添加日志记录模型返回结果
+            self.logger.info(f"[_generate_planting_content_cp] Model call successful")
+            self.logger.debug(f"[_generate_planting_content_cp] Model response: {planting_content}")
+            
+            # 尝试解析返回内容
+            try:
+                import json
+                parsed_content = json.loads(planting_content)
+                self.logger.debug(f"[_generate_planting_content_cp] Parsed JSON response: {parsed_content}")
+            except json.JSONDecodeError as je:
+                self.logger.warning(f"[_generate_planting_content_cp] Failed to parse model response as JSON: {je}")
+            
             return planting_content
             
         except Exception as e:
             self.logger.error(f"Error generating planting content: {str(e)}")
+            # 添加堆栈跟踪信息
+            import traceback
+            self.logger.error(f"Full traceback: {traceback.format_exc()}")
             return "测评图文规划生成失败"
-
-
-import re
-from typing import List, Dict, Any
 
 
 def parse_planting_content(content: str) -> List[Dict[str, str]]:
@@ -1398,6 +1766,11 @@ def parse_planting_content(content: str) -> List[Dict[str, str]]:
             remark_match = re.search(r'备注：(.*)', remark_section, re.DOTALL)
             if remark_match:
                 remark = remark_match.group(1).strip()
+                # 处理转义字符
+                remark = remark.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t')
+            
+            # 处理planning中的转义字符
+            planning = planning.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t')
             
             image_info = {
                 "image_type": image_type,
@@ -1422,6 +1795,11 @@ def parse_planting_content(content: str) -> List[Dict[str, str]]:
             remark_match = re.search(r'备注：(.*)', remark_section, re.DOTALL)
             if remark_match:
                 remark = remark_match.group(1).strip()
+                # 处理转义字符
+                remark = remark.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t')
+            
+            # 处理planning中的转义字符
+            planning = planning.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t')
             
             image_info = {
                 "image_type": image_type,
@@ -1464,11 +1842,16 @@ def parse_planting_content(content: str) -> List[Dict[str, str]]:
                             if layout_match:
                                 planning += "\n排版建议：" + layout_match.group(1).strip()
                         
+                        # 处理planning中的转义字符
+                        planning = planning.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t')
+                        
                         # 提取备注
                         remark = ""
                         remark_match = re.search(r'备注：(.*?)(?=\n图片类型：|\Z)', section, re.DOTALL)
                         if remark_match:
                             remark = remark_match.group(1).strip()
+                            # 处理转义字符
+                            remark = remark.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t')
                         
                         image_info = {
                             "image_type": image_type,
@@ -1481,62 +1864,3 @@ def parse_planting_content(content: str) -> List[Dict[str, str]]:
     return result
 
 
-def parse_planting_captions(content: str) -> Dict[str, Any]:
-    """
-    解析种草配文内容，提取标题、正文和标签
-    
-    Args:
-        content: 大模型返回的种草配文文本
-        
-    Returns:
-        包含titles、body和hashtags的字典
-    """
-    # 初始化返回数据
-    captions_data = {
-        "titles": [],
-        "body": "",
-        "hashtags": []
-    }
-    
-    # 如果内容为空，直接返回空数据
-    if not content:
-        return captions_data
-    
-    # 解析标题部分
-    title_match = re.search(r'- \*\*标题\*\*：(.*?)(?=\n- \*\*正文|\Z)', content, re.DOTALL)
-    if title_match:
-        titles_text = title_match.group(1)
-        titles = re.findall(r'- ([^\n]+)', titles_text)
-        captions_data["titles"] = [title.strip() for title in titles]
-    else:
-        # 单行标题格式
-        title_matches = re.findall(r'- \*\*标题\*\*：\s*((?:\n\s*\d+\.\s*[^\n]+)+)', content, re.DOTALL)
-        if title_matches:
-            titles = re.findall(r'\d+\.\s*([^\n]+)', title_matches[0])
-            captions_data["titles"] = [title.strip() for title in titles]
-
-    # 解析正文部分
-    body_match = re.search(r'- \*\*正文\*\*：(.*?)(?=\n- \*\*标签|\n标签：|\Z)', content, re.DOTALL)
-    if body_match:
-        captions_data["body"] = body_match.group(1).strip()
-    else:
-        # 尝试匹配旧格式
-        body_match = re.search(r'正文：(.*?)(?=\n标签：|\Z)', content, re.DOTALL)
-        if body_match:
-            captions_data["body"] = body_match.group(1).strip()
-
-    # 解析标签部分
-    hashtag_match = re.search(r'- \*\*标签\*\*：(.*?)(?=\Z)', content, re.DOTALL)
-    if hashtag_match:
-        hashtags_text = hashtag_match.group(1).strip()
-        hashtags = re.findall(r'#\S+', hashtags_text)
-        captions_data["hashtags"] = hashtags
-    else:
-        # 尝试匹配旧格式
-        hashtag_match = re.search(r'标签：(.*?)(?=\Z)', content, re.DOTALL)
-        if hashtag_match:
-            hashtags_text = hashtag_match.group(1).strip()
-            hashtags = re.findall(r'#\S+', hashtags_text)
-            captions_data["hashtags"] = hashtags
-
-    return captions_data

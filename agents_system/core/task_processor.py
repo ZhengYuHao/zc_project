@@ -201,32 +201,22 @@ async def extract_blogger_style(request_data: Dict[str, Any]) -> Dict[str, Any]:
                     "text": f"\n【配文】：{caption}\n"
                 })
 
-        logger.info(f"Extracting blogger style for {len(blogger_posts)} posts")
+        logger.info(f"Extracting blogger style for {(blogger_posts)} posts")
 
-        # 调用豆包视觉模型，传递内容数组而不是纯文本
-        from models.doubao import get_doubao_model
-        doubao_model = get_doubao_model()
+        # 使用模型管理器调用视觉模型（通过支持特殊消息格式的新方法）
+        from models.model_manager import ModelManager
+        model_manager = ModelManager()
         
-        # 使用特殊的模型配置来调用视觉模型
-        visual_model_config = {
-            "model": "ep-20250520143333-8ghr9"  # 视觉模型ID
-        }
+        # 构造视觉模型调用的消息格式
+        messages = [{"role": "user", "content": content}]
         
-        # 创建专门用于视觉分析的模型实例
-        visual_doubao_model = doubao_model.__class__(visual_model_config)
-        
-        logger.info(f"Sending request to Doubao visual model with {len(content)} content items")
-        
-        # 调用视觉模型
-        result = await visual_doubao_model._call_api("", messages=[{"role": "user", "content": content}])
-        
-        generated_text = result["choices"][0]["message"]["content"]
-        logger.info(f"Doubao visual model response: {generated_text}")
+        # 调用视觉模型（使用blogger_style_analysis任务类型）
+        result = await model_manager.call_model_with_messages("blogger_style_analysis", messages)
         
         # 解析结果
         response = {
-            "blogger_style": generated_text,
-            "tone": "friendly" if "活泼" in generated_text or "轻松" in generated_text else "professional",
+            "blogger_style": result,
+            "tone": "friendly" if "活泼" in result or "轻松" in result else "professional",
             "expression_style": "图文并茂"
         }
         
@@ -259,233 +249,7 @@ async def extract_blogger_style(request_data: Dict[str, Any]) -> Dict[str, Any]:
         }
         logger.info(f"Returning default response: {default_response}")
         return default_response
-
-
-async def extract_product_endorsement(request_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    提取产品背书
     
-    Args:
-        request_data: 请求数据
-        
-    Returns:
-        处理结果
-    """
-    from models.doubao import call_doubao
-    from utils.logger import get_logger
-    
-    logger = get_logger("agent.task_processor")
-    
-    # 获取请求数据
-    ProductHighlights = request_data.get('ProductHighlights', '')
-    
-    # 构建提示词
-    prompt = f"""## 角色
-你是一名专业的市场分析师，擅长从复杂的文本中提取关键的市场和信誉信息以及硬性产品数据。
-
-## 输入
-【卖点信息】：{ProductHighlights}
-
-## 流程1：
-请从提供的【卖点信息】中，提取所有与“产品背书”相关的内容。产品背书是指任何能够增加产品可信度、权威性和吸引力的第三方认可或证明。
-### 背书信息
-名人/专家代言： 任何知名人士、行业专家、KOL、网红的使用推荐或公开称赞。
-媒体报道与奖项： 产品被知名媒体、杂志、网站、电视台报道或提及；获得过的行业奖项、认证或排名（如“荣获红点设计奖”、“被《时代》杂志报道”）。
-专业机构认证： 来自权威机构的安全认证、质量认证、环保认证等（如“通过FDA认证”、“获得UL安全认证”）。
-合作伙伴： 与知名品牌、机构的合作或联名（如“与NASA联合开发”、“迪士尼官方授权”）。
-
-## 流程2
-请从提供的【卖点信息】中，提取所有与“产品数据”相关的内容
-产品数据是只关于产品本身性能、规格、功能的客观、可量化的硬性指标
-
-## 输出格式
-**产品背书：** XX
-**产品数据：** XX
-"""
-    
-    logger.info(f"Product highlights: {ProductHighlights}")
-    logger.info(f"Prompt: {prompt}")
-    
-    try:
-        # 调用豆包模型
-        result = await call_doubao(prompt)
-        logger.info(f"Doubao model response: {result}")
-        
-        # 解析结果
-        lines = result.strip().split('\n')
-        product_endorsement = ""
-        product_data = ""
-        
-        logger.info(f"Parsing lines: {lines}")
-        
-        # 使用状态跟踪来处理跨多行的内容
-        current_section = None  # None, "endorsement", or "data"
-        endorsement_lines = []
-        data_lines = []
-        
-        for line in lines:
-            logger.debug(f"Processing line: '{line}'")
-            logger.debug(f"Line bytes: {repr(line)}")
-            
-            # 检查是否是新的部分开始
-            if line.startswith("**产品背书：**"):
-                current_section = "endorsement"
-                # 修复：更安全地提取内容，避免字符丢失
-                prefix = "**产品背书：**"
-                if line.startswith(prefix):
-                    content = line[len(prefix):].strip()
-                    if content:
-                        endorsement_lines.append(content)
-            elif line.startswith("**产品数据：**"):
-                current_section = "data"
-                # 修复：更安全地提取内容，避免字符丢失
-                prefix = "**产品数据：**"
-                if line.startswith(prefix):
-                    content = line[len(prefix):].strip()
-                    if content:
-                        data_lines.append(content)
-            elif line.startswith("- "):
-                # 这是内容行
-                if current_section == "endorsement":
-                    endorsement_lines.append(line.strip())
-                elif current_section == "data":
-                    data_lines.append(line.strip())
-            elif line.strip() == "":
-                # 空行，不改变当前部分
-                pass
-            else:
-                # 其他行，根据当前部分添加
-                if current_section == "endorsement":
-                    endorsement_lines.append(line.strip())
-                elif current_section == "data":
-                    data_lines.append(line.strip())
-        
-        # 合并行内容
-        product_endorsement = "\n".join(endorsement_lines).strip()
-        product_data = "\n".join(data_lines).strip()
-        
-        logger.info(f"Found product endorsement: {product_endorsement}")
-        logger.info(f"Found product data: {product_data}")
-        
-        # 添加解析结果检查
-        logger.debug(f"Parse results - Product endorsement: '{product_endorsement}', "
-                    f"Product data: '{product_data}'")
-        
-        response = {
-            "product_endorsement": product_endorsement,
-            "product_data": product_data
-        }
-        
-        logger.info(f"Extract product endorsement result: {response}")
-        return response
-        
-    except Exception as e:
-        logger.error(f"Error extracting product endorsement: {str(e)}", exc_info=True)
-        # 出现异常时返回默认值
-        default_response = {
-            
-        }
-        logger.info(f"Returning default response: {default_response}")
-        return default_response
-
-
-async def extract_topic(request_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    提取话题
-    
-    Args:
-        request_data: 请求数据
-        
-    Returns:
-        处理结果
-    """
-    from models.doubao import call_doubao
-    from utils.logger import get_logger
-    
-    logger = get_logger("agent.task_processor")
-    
-    # 获取请求数据
-    topic = request_data.get('topic', '')
-    ProductHighlights = request_data.get('ProductHighlights', '')
-    
-    # 构建提示词
-    prompt = f"""## 角色
-你是一位资深产品营销策略专家，拥有丰富的市场推广经验，擅长从复杂的产品信息中提炼出话题
-
-## 任务
-仔细理解信息{ProductHighlights}提取出该产品的话题
-
-## 输出
-话题：XX
-
-## 限制
-只提取信息中的话题，不扩展
-"""
-
-    try:
-        # 调用豆包模型
-        result = await call_doubao(prompt)
-        logger.info(f"Doubao model response: {result}")
-        
-        # 解析结果
-        lines = result.strip().split('\n')
-        extracted_topic = ""
-        
-        logger.info(f"Parsing lines: {lines}")
-        
-        # 使用状态跟踪来处理跨多行的内容
-        current_section = None  # None, "topic"
-        topic_lines = []
-        
-        for line in lines:
-            logger.debug(f"Processing line: '{line}'")
-            logger.debug(f"Line bytes: {repr(line)}")
-            
-            # 检查是否是新的部分开始
-            if line.startswith("话题："):
-                current_section = "topic"
-                # 修复：更安全地提取内容，避免字符丢失
-                prefix = "话题："
-                if line.startswith(prefix):
-                    content = line[len(prefix):].strip()
-                    if content:
-                        topic_lines.append(content)
-            elif line.strip() == "":
-                # 空行，不改变当前部分
-                pass
-            else:
-                # 其他行，根据当前部分添加
-                if current_section == "topic":
-                    topic_lines.append(line.strip())
-        
-        # 合并行内容
-        extracted_topic = "\n".join(topic_lines).strip()
-        
-        logger.info(f"Found topic: {extracted_topic}")
-        
-        # 添加解析结果检查
-        logger.debug(f"Parse results - Extracted topic: '{extracted_topic}'")
-        
-        response = {
-            "main_topic": extracted_topic 
-        }
-        
-        logger.info(f"Extract topic result: {response}")
-        return response
-        
-    except Exception as e:
-        logger.error(f"Error extracting topic: {str(e)}")
-        # 记录异常的详细信息
-        import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        # 出现异常时返回默认值
-        default_response = {
-            "main_topic": topic
-        } 
-        logger.info(f"Returning default response: {default_response}")
-        return default_response
-
-
 class TaskProcessor:
     """并发任务处理器"""
     
@@ -562,5 +326,5 @@ task_processor = TaskProcessor()
 
 # 注册所有任务
 task_processor.register_task("blogger_style_extractor", extract_blogger_style)  # 注册达人风格理解提取任务
-task_processor.register_task("product_endorsement_extractor", extract_product_endorsement)  # 注册产品背书提取任务
-task_processor.register_task("topic_extractor", extract_topic)  # 注册话题提取任务
+# task_processor.register_task("product_endorsement_extractor", extract_product_endorsement)  # 注册产品背书提取任务
+# task_processor.register_task("topic_extractor", extract_topic)  # 注册话题提取任务
