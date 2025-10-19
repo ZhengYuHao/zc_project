@@ -49,26 +49,48 @@ class TaskProcessor:
             raise ValueError(f"Unknown task: {task_name}")
         return await self.tasks[task_name](request_data)
 
-
-# 全局任务处理器实例
-task_processor = TaskProcessor()
-
-
-# 将TaskProcessor类的定义移到所有异步处理函数之前
-class TaskProcessor:
-    """任务处理器类"""
-    def __init__(self):
-        self.tasks = {}
+    async def execute_tasks(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
+        """并发执行所有注册的任务"""
+        results = {}
+        
+        # 创建任务列表
+        tasks = []
+        task_names = []
+        
+        # 为每个注册的任务创建异步任务
+        for task_name, task_func in self.tasks.items():
+            task = asyncio.create_task(self._execute_single_task(task_name, task_func, request_data))
+            tasks.append(task)
+            task_names.append(task_name)
+        
+        if not tasks:
+            return {}
+        
+        # 并发执行所有任务
+        task_results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # 处理结果
+        for task_name, result in zip(task_names, task_results):
+            if isinstance(result, Exception):
+                results[task_name] = {
+                    "status": "error",
+                    "error": str(result)
+                }
+            else:
+                results[task_name] = {
+                    "status": "success",
+                    "data": result
+                }
+        
+        return results
     
-    def register_task(self, task_name: str, func: Callable):
-        """注册任务"""
-        self.tasks[task_name] = func
-    
-    async def execute_task(self, task_name: str, request_data: Dict[str, Any]) -> Dict[str, Any]:
-        """执行任务"""
-        if task_name not in self.tasks:
-            raise ValueError(f"Unknown task: {task_name}")
-        return await self.tasks[task_name](request_data)
+    async def _execute_single_task(self, task_name: str, task_func: Callable, request_data: Dict[str, Any]) -> Any:
+        """执行单个任务"""
+        try:
+            return await task_func(request_data)
+        except Exception as e:
+            # 重新抛出异常，让execute_tasks方法捕获并处理
+            raise e
 
 
 # 全局任务处理器实例
