@@ -2,7 +2,7 @@ import os
 import sys
 import asyncio
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 import importlib
 
@@ -15,6 +15,7 @@ from models.feishu import get_feishu_client
 from models.model_manager import ModelManager
 from config.model_config import load_model_config
 from core.request_middleware import RequestIDMiddleware
+from core.task_processor import process_blogger_style_callback, get_task_status
 
 # 设置日志
 setup_logger()
@@ -96,6 +97,31 @@ async def root():
 async def health_check():
     """健康检查"""
     return {"status": "healthy"}
+
+@app.post("/callback/blogger_style/{task_id}")
+async def blogger_style_callback(task_id: str, request: Request):
+    """处理达人风格分析的回调请求"""
+    try:
+        # 获取回调数据
+        callback_data = await request.json()
+        logger.info(f"Received callback for task_id: {task_id}")
+        
+        # 处理回调数据
+        result = await process_blogger_style_callback(task_id, callback_data)
+        
+        if result:
+            return {"status": "success", "message": "Callback processed successfully"}
+        else:
+            return {"status": "error", "message": "Failed to process callback"}
+    except Exception as e:
+        logger.error(f"Error processing blogger style callback: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.get("/task/status/{task_id}")
+async def task_status(task_id: str):
+    """查询任务状态"""
+    status = get_task_status(task_id)
+    return {"task_id": task_id, "status": status}
 
 if __name__ == "__main__":
     uvicorn.run(

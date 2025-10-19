@@ -8,6 +8,7 @@
 import asyncio
 import json
 import httpx
+import uuid
 from typing import Dict, Any, List, Callable, Optional
 from utils.logger import get_logger
 from config.model_config import load_model_config
@@ -25,6 +26,11 @@ def get_model_manager() -> ModelManager:
         config = load_model_config()
         _model_manager = ModelManager(config)
     return _model_manager
+
+
+# 存储异步任务状态的字典和等待事件
+async_tasks: Dict[str, Dict[str, Any]] = {}
+task_events: Dict[str, asyncio.Event] = {}
 
 
 # 先定义TaskProcessor类再实例化
@@ -71,7 +77,7 @@ task_processor = TaskProcessor()
 
 async def extract_blogger_style(request_data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    提取达人风格理解
+    提取达人风格理解（异步回调阻塞版本）
     
     Args:
         request_data: 请求数据，包含小红书用户主页URL
@@ -83,6 +89,7 @@ async def extract_blogger_style(request_data: Dict[str, Any]) -> Dict[str, Any]:
     
     # 获取请求URL（小红书用户主页URL）
     xhs_profile_url = request_data.get('blogger_link')
+    
     if not xhs_profile_url:
         logger.error("Missing URL in request data")
         return {
@@ -93,8 +100,6 @@ async def extract_blogger_style(request_data: Dict[str, Any]) -> Dict[str, Any]:
     
     try:
         # 从URL中提取userUuid（最后一部分）
-        # 例如：https://www.xiaohongshu.com/user/Profile/63611642000000001f0162a1
-        # 提取：63611642000000001f0162a1
         from urllib.parse import urlparse
         parsed_url = urlparse(xhs_profile_url)
         path_parts = parsed_url.path.strip('/').split('/')
@@ -110,41 +115,144 @@ async def extract_blogger_style(request_data: Dict[str, Any]) -> Dict[str, Any]:
         
         logger.info(f"提取到的userUuid: {user_uuid}")
         
+        # 生成任务ID
+        task_id = str(uuid.uuid4())
+        
+        # 创建事件用于等待回调
+        task_event = asyncio.Event()
+        task_events[task_id] = task_event
+        
         # 从配置中获取API URL
         from config.settings import settings
         api_url = settings.XHS_USER_NOTES_API_URL
         
-        # 准备POST请求数据
+        # 准备回调URL - 这是外部服务处理完成后推送数据的地址
+        callback_url = f"http://124.221.155.224:8847/callback/blogger_style/{task_id}"
+        
+        # 准备POST请求数据，包含回调URL
         post_data = {
             "size": 5,
             "publicTimeEnd": "2025-09-01 00:00:00",
             "publicTimeStart": "2025-06-01 00:00:00", 
-            "userUuid": user_uuid  # 使用从URL中提取的userUuid
+            "userUuid": user_uuid,
+            "callbackUrl": callback_url  # 提供给外部服务的回调地址
         }
         
-        # 发送POST请求获取达人笔记数据
-        logger.info(f"Fetching blogger posts from: {api_url}")
+        # 发送POST请求启动异步任务
+        logger.info(f"Sending async request to: {api_url}")
         logger.info(f"Request data: {post_data}")
+        
         async with httpx.AsyncClient() as client:
             response = await client.post(api_url, json=post_data)
             response.raise_for_status()
             result = response.json()
             
-        logger.info(f"Received {len(result.get('data', []))} posts from API")
+        logger.info(f"Async task initiated, response: {result}")
         
-        # 检查API响应
-        if result.get("code") != "200":
-            logger.error(f"API returned error: {result.get('msg', 'Unknown error')}")
+        # 存储任务状态
+        async_tasks[task_id] = {
+            "status": "processing",
+            "created_at": asyncio.get_event_loop().time()
+        }
+        
+        # 等待外部服务回调（阻塞等待，但不阻塞事件循环）
+        logger.info(f"Waiting for callback for task_id: {task_id}")
+        await task_event.wait()
+        
+        # 获取回调数据
+        callback_data = async_tasks[task_id].get("data")
+        if not callback_data:
+            logger.error(f"No callback data received for task_id: {task_id}")
             return {
-                "blogger_style": "达人风格分析: 获取达人数据失败",
+                "blogger_style": "达人风格分析: 未收到回调数据",
                 "tone": "professional",
                 "expression_style": "图文并茂"
             }
         
+        # 处理回调数据
+        return await _process_blogger_data(task_id, callback_data)
+        
+    except httpx.HTTPError as e:
+        logger.error(f"HTTP error when initiating async blogger analysis: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return {
+            "blogger_style": "达人风格分析: 启动异步任务时网络错误",
+            "tone": "professional",
+            "expression_style": "图文并茂"
+        }
+    except Exception as e:
+        logger.error(f"Error initiating async blogger style analysis: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return {
+            "blogger_style": "达人风格分析: 启动异步任务失败",
+            "tone": "professional",
+            "expression_style": "图文并茂"
+        }
+
+
+async def process_blogger_style_callback(task_id: str, blogger_data: Dict[str, Any]) -> bool:
+    """
+    处理达人风格分析完成后的回调数据
+    
+    Args:
+        task_id: 任务ID
+        blogger_data: 从外部服务回调的数据
+        
+    Returns:
+        处理是否成功
+    """
+    logger = get_logger("agent.task_processor")
+    
+    try:
+        logger.info(f"Processing callback for task_id: {task_id}")
+        
+        # 更新任务状态
+        if task_id in async_tasks:
+            async_tasks[task_id]["status"] = "completed"
+            async_tasks[task_id]["data"] = blogger_data
+            # 设置事件，唤醒等待的协程
+            if task_id in task_events:
+                task_events[task_id].set()
+                logger.info(f"Event set for task_id: {task_id}")
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error processing blogger style callback: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        # 更新任务状态为失败
+        if task_id in async_tasks:
+            async_tasks[task_id]["status"] = "failed"
+            async_tasks[task_id]["error"] = str(e)
+            # 设置事件，唤醒等待的协程
+            if task_id in task_events:
+                task_events[task_id].set()
+        
+        return False
+
+
+async def _process_blogger_data(task_id: str, blogger_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    处理达人数据并生成风格分析结果
+    
+    Args:
+        task_id: 任务ID
+        blogger_data: 达人数据
+        
+    Returns:
+        处理结果
+    """
+    logger = get_logger("agent.task_processor")
+    
+    try:
         # 提取笔记数据
-        blogger_posts = result.get("data", [])
+        blogger_posts = blogger_data.get("data", [])
         if not blogger_posts:
-            logger.warning("No posts found in API response")
+            logger.warning("No posts found in callback data")
             return {
                 "blogger_style": "达人风格分析: 未获取到达人笔记数据",
                 "tone": "professional",
@@ -201,11 +309,10 @@ async def extract_blogger_style(request_data: Dict[str, Any]) -> Dict[str, Any]:
                     "text": f"\n【配文】：{caption}\n"
                 })
 
-        logger.info(f"Extracting blogger style for {(blogger_posts)} posts")
+        logger.info(f"Extracting blogger style for {len(blogger_posts)} posts from callback")
 
         # 使用模型管理器调用视觉模型（通过支持特殊消息格式的新方法）
-        from models.model_manager import ModelManager
-        model_manager = ModelManager()
+        model_manager = get_model_manager()
         
         # 构造视觉模型调用的消息格式
         messages = [{"role": "user", "content": content}]
@@ -215,116 +322,42 @@ async def extract_blogger_style(request_data: Dict[str, Any]) -> Dict[str, Any]:
         
         # 解析结果
         response = {
+            "task_id": task_id,
             "blogger_style": result,
             "tone": "friendly" if "活泼" in result or "轻松" in result else "professional",
             "expression_style": "图文并茂"
         }
         
-        logger.info(f"Extract blogger style result: {response}")
+        logger.info(f"Extract blogger style result from callback: {response}")
         return response
         
-    except httpx.HTTPError as e:
-        logger.error(f"HTTP error when fetching blogger posts: {str(e)}")
-        # 记录异常的详细信息
-        import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        # 出现异常时返回默认值
-        default_response = {
-            "blogger_style": "达人风格分析: 获取达人数据时网络错误",
-            "tone": "professional",
-            "expression_style": "图文并茂"
-        }
-        logger.info(f"Returning default response: {default_response}")
-        return default_response
     except Exception as e:
-        logger.error(f"Error extracting blogger style: {str(e)}")
-        # 记录异常的详细信息
+        logger.error(f"Error processing blogger data: {str(e)}")
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
-        # 出现异常时返回默认值
-        default_response = {
-            "blogger_style": "达人风格分析: 未分析出具体风格",
+        
+        return {
+            "task_id": task_id,
+            "blogger_style": "达人风格分析: 处理数据时发生错误",
             "tone": "professional",
             "expression_style": "图文并茂"
         }
-        logger.info(f"Returning default response: {default_response}")
-        return default_response
-    
-class TaskProcessor:
-    """并发任务处理器"""
-    
-    def __init__(self):
-        self.logger = get_logger("agent.task_processor")
-        self.tasks = {}
-    
-    def register_task(self, task_name: str, task_func: Callable):
-        """
-        注册任务处理函数
-        
-        Args:
-            task_name: 任务名称
-            task_func: 任务处理函数
-        """
-        self.tasks[task_name] = task_func
-        self.logger.info(f"Registered task: {task_name}")
-    
-    async def execute_tasks(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
-        """执行所有注册的任务"""
-        results = {}
-        
-        # 并发执行所有任务
-        task_list = []
-        for task_name, task_func in self.tasks.items():
-            self.logger.info(f"Executing task: {task_name}")
-            task_list.append((task_name, task_func(request_data)))
-        
-        # 等待所有任务完成
-        for task_name, task_coro in task_list:
-            try:
-                result = await task_coro
-                # 统一结果格式
-                if isinstance(result, dict) and "error" in result:
-                    # 任务执行出错
-                    results[task_name] = {
-                        "status": "failed",
-                        "error": result["error"]
-                    }
-                else:
-                    # 任务执行成功
-                    results[task_name] = {
-                        "status": "success",
-                        "data": result
-                    }
-                self.logger.info(f"Task {task_name} completed with status: {results[task_name]['status']}")
-            except Exception as e:
-                self.logger.error(f"Task {task_name} failed with error: {str(e)}")
-                results[task_name] = {
-                    "status": "failed",
-                    "error": str(e)
-                }
-        
-        self.logger.info("All tasks completed")
-        return results
-    
-    async def _execute_single_task(self, task_name: str, task_func: Callable, request_data: Dict[str, Any]) -> Dict[str, Any]:
-        """执行单个任务"""
-        try:
-            self.logger.info(f"Executing task: {task_name}")
-            result = await task_func(request_data)
-            self.logger.info(f"Task {task_name} completed successfully")
-            return {task_name: result}
-        except Exception as e:
-            self.logger.error(f"Error executing task {task_name}: {str(e)}")
-            # 记录异常的详细信息
-            import traceback
-            self.logger.error(f"Traceback: {traceback.format_exc()}")
-            return {task_name: {"error": str(e)}}
 
 
-# 全局任务处理器实例
-task_processor = TaskProcessor()
-
-# 注册所有任务
-task_processor.register_task("blogger_style_extractor", extract_blogger_style)  # 注册达人风格理解提取任务
-# task_processor.register_task("product_endorsement_extractor", extract_product_endorsement)  # 注册产品背书提取任务
-# task_processor.register_task("topic_extractor", extract_topic)  # 注册话题提取任务
+def get_task_status(task_id: str) -> Dict[str, Any]:
+    """
+    获取任务状态
+    
+    Args:
+        task_id: 任务ID
+        
+    Returns:
+        任务状态信息
+    """
+    logger = get_logger("agent.task_processor")
+    logger.info(f"Getting task status for task_id: {task_id}")
+    
+    if task_id in async_tasks:
+        return async_tasks[task_id]
+    else:
+        return {"status": "not_found", "message": "任务不存在"}
