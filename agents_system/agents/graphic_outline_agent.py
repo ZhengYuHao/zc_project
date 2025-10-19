@@ -421,8 +421,14 @@ class GraphicOutlineAgent(BaseAgent):
                 
             direction = processed_data.get("direction", "")
             # 使用正则表达式匹配方向类型
-            # 匹配包含"种草"或"vlog"的内容
-            if re.search(r'(种|草|vlog)', direction):
+            # 扩展种草类关键词匹配，保留原有逻辑
+            planting_pattern = r'(种|草|vlog|教程|技能攻略|指北|教学|秘籍|技巧|干货|开箱|展示|挑战|好物分享|穿搭|OOTD|清单|合集|推荐|日常|记录|分享|爱用|探店|打卡|方案|改造|规划|沉浸式|神器|送礼|生活方式|赛事|备赛|新手必入|解压|治愈系|Routine|翻包|翻箱|平替|科普|仪式感)'
+            
+            # 扩展测评类关键词匹配，保留原有逻辑
+            review_pattern = r'(测|评|选购|指南|排行|榜单|盘点|选购攻略|单品测评|横向测评|对比|长期测评|深度测评|使用报告|拆解|实验|实验室|检测|硬核测评|数据测评|拉表|实测|真人实测|上脸|上身体验|红黑榜|避坑攻略|排雷|平替测评|真假对比|真伪对比|升级对比|性能测试)'
+            
+            # 匹配种草类内容（扩展匹配，同时保留原有"种|草|vlog"匹配）
+            if re.search(planting_pattern, direction):
                 # 调用豆包大模型生成种草图文规划
                 planting_content = await self._generate_planting_content(processed_data)
                 processed_data["planting_content"] = planting_content
@@ -432,8 +438,8 @@ class GraphicOutlineAgent(BaseAgent):
                 processed_data["planting_captions"] = planting_captions
                 
             
-            # 匹配包含"测试"、"拼团"、"选购"或"指南"的内容
-            elif re.search(r'(测|评|选购|指南)', direction):
+            # 匹配测评类内容（扩展匹配，同时保留原有"测|评|选购|指南"匹配）
+            elif re.search(review_pattern, direction):
                 # 处理图文规划(测试)的工作
                 planting_content = await self._generate_planting_content_cp(processed_data)
                 processed_data["planting_content"] = planting_content
@@ -445,7 +451,7 @@ class GraphicOutlineAgent(BaseAgent):
                 
             else:
                 request_id = get_request_id()
-                error_msg = f"[{request_id}] Invalid direction value: {direction}. Expected values containing '种草', 'vlog' for first condition, or '测试', '拼团', '选购', '指南' for second condition."
+                error_msg = f"[{request_id}] Invalid direction value: {direction}. Expected values containing planting keywords like '种草', '教程', 'vlog' etc. for first condition, or review keywords like '测评', '选购', '指南', '排行' etc. for second condition."
                 self.logger.error(error_msg)
                 raise ValueError(f"Invalid direction: {direction}")
 
