@@ -104,7 +104,7 @@ async def blogger_style_callback(task_id: str, request: Request):
     try:
         # 获取回调数据
         callback_data = await request.json()
-        logger.info(f"Received callback for task_id: {task_id}")
+        logger.info(f"Received callback for task_id: {task_id}, {callback_data}")
         
         # 处理回调数据
         result = await process_blogger_style_callback(task_id, callback_data)
