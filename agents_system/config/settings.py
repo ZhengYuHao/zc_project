@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     
     # 小红书用户笔记API配置
     XHS_USER_NOTES_API_URL: str = Field(
-        default="https://zongsing.com/prod-api/platform/agent/homepage/listNoteByUserUuid", 
+        default="https://zongsing.com/prod-api/platform/agent/homepage/crawling", 
         alias="XHS_USER_NOTES_API_URL"
     )
     

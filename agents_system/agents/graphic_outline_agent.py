@@ -404,6 +404,11 @@ class GraphicOutlineAgent(BaseAgent):
         request_id = get_request_id()
         
         try:
+            # 确保任务处理器中注册了达人风格分析任务
+            from core.task_processor import task_processor, extract_blogger_style
+            if "blogger_style_extractor" not in task_processor.tasks:
+                task_processor.register_task("blogger_style_extractor", extract_blogger_style)
+            
             # 并发执行七个任务
             task_results = await task_processor.execute_tasks(request)
             self.logger.info(f"task_results graphic outline request{task_results}")

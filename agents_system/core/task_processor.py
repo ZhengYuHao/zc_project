@@ -271,9 +271,9 @@ async def _process_blogger_data(task_id: str, blogger_data: Dict[str, Any]) -> D
     logger = get_logger("agent.task_processor")
     
     try:
-        # 提取笔记数据
-        blogger_posts = blogger_data.get("data", [])
-        if not blogger_posts:
+        # 提取笔记数据 - 根据新的数据格式调整
+        note_info_list = blogger_data.get("noteInfoList", [])
+        if not note_info_list:
             logger.warning("No posts found in callback data")
             return {
                 "blogger_style": "达人风格分析: 未获取到达人笔记数据",
@@ -306,22 +306,34 @@ async def _process_blogger_data(task_id: str, blogger_data: Dict[str, Any]) -> D
         content = [{"type": "text", "text": text_prompt}]
         
         # 添加笔记内容到消息中
-        for i, post in enumerate(blogger_posts, 1):
+        for i, post in enumerate(note_info_list, 1):
             content.append({"type": "text", "text": f"\n笔记 {i}:\n"})
             
             # 添加图片（如果存在）
-            image_url = post.get('imagesList')
-            if image_url:
-                content.append({
-                    "type": "text", 
-                    "text": f"【达人笔记封面图】：\n"
-                })
-                # 添加图片URL到内容中
-                image_content = {
-                    "type": "image_url",
-                    "image_url": {"url": image_url}
-                }
-                content.append(image_content)
+            # 根据新的数据格式，图片URL可能在不同的字段中
+            image_urls = post.get('pictureUrlList', [])
+            if image_urls and isinstance(image_urls, list) and len(image_urls) > 0:
+                # 过滤掉可能无法被外部API访问的图片URL
+                valid_image_urls = []
+                for image_url in image_urls:
+                    # 检查URL是否包含可能引起访问问题的路径
+                    if "notes_pre_post" not in image_url:
+                        valid_image_urls.append(image_url)
+                    else:
+                        logger.warning(f"Skipping potentially inaccessible image URL: {image_url}")
+                
+                # 处理所有有效的图片
+                for j, image_url in enumerate(valid_image_urls):
+                    content.append({
+                        "type": "text", 
+                        "text": f"【达人笔记图片{j+1}】：\n"
+                    })
+                    # 添加图片URL到内容中
+                    image_content = {
+                        "type": "image_url",
+                        "image_url": {"url": image_url}
+                    }
+                    content.append(image_content)
             
             # 添加配文（如果存在）
             caption = post.get('description')
@@ -331,7 +343,7 @@ async def _process_blogger_data(task_id: str, blogger_data: Dict[str, Any]) -> D
                     "text": f"\n【配文】：{caption}\n"
                 })
 
-        logger.info(f"Extracting blogger style for {len(blogger_posts)} posts from callback")
+        logger.info(f"Extracting blogger style for {len(note_info_list)} posts from callback")
 
         # 使用模型管理器调用视觉模型（通过支持特殊消息格式的新方法）
         model_manager = get_model_manager()
