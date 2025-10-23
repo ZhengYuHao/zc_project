@@ -13,7 +13,8 @@ from typing import Dict, Any, List, Callable, Optional
 from utils.logger import get_logger
 from config.model_config import load_model_config
 from models.model_manager import ModelManager
-
+# 引入request_context模块来处理request_id
+from core.request_context import get_request_id
 
 # 全局模型管理器实例
 _model_manager: Optional[ModelManager] = None
@@ -29,6 +30,7 @@ def get_model_manager() -> ModelManager:
 
 
 # 存储异步任务状态的字典和等待事件
+# 修改async_tasks结构，增加request_id字段
 async_tasks: Dict[str, Dict[str, Any]] = {}
 task_events: Dict[str, asyncio.Event] = {}
 
@@ -140,6 +142,9 @@ async def extract_blogger_style(request_data: Dict[str, Any]) -> Dict[str, Any]:
         # 生成任务ID
         task_id = str(uuid.uuid4())
         
+        # 获取当前请求的request_id并保存
+        request_id = get_request_id()
+        
         # 创建事件用于等待回调
         task_event = asyncio.Event()
         task_events[task_id] = task_event
@@ -171,10 +176,11 @@ async def extract_blogger_style(request_data: Dict[str, Any]) -> Dict[str, Any]:
             
         logger.info(f"Async task initiated, response: {result}")
         
-        # 存储任务状态
+        # 存储任务状态，同时保存原始的request_id
         async_tasks[task_id] = {
             "status": "processing",
-            "created_at": asyncio.get_event_loop().time()
+            "created_at": asyncio.get_event_loop().time(),
+            "request_id": request_id  # 保存原始请求ID
         }
         
         # 等待外部服务回调（阻塞等待，但不阻塞事件循环）
@@ -225,6 +231,8 @@ async def process_blogger_style_callback(task_id: str, blogger_data: Dict[str, A
     Returns:
         处理是否成功
     """
+    # 导入request_context模块来处理request_id
+    from core.request_context import set_request_id
     logger = get_logger("agent.task_processor")
     
     try:
@@ -232,6 +240,12 @@ async def process_blogger_style_callback(task_id: str, blogger_data: Dict[str, A
         
         # 更新任务状态
         if task_id in async_tasks:
+            # 在处理回调时恢复原始的request_id
+            original_request_id = async_tasks[task_id].get("request_id")
+            if original_request_id:
+                set_request_id(original_request_id)
+                logger.info(f"Restored original request_id: {original_request_id} for task_id: {task_id}")
+            
             async_tasks[task_id]["status"] = "completed"
             async_tasks[task_id]["data"] = blogger_data
             # 设置事件，唤醒等待的协程
@@ -248,6 +262,12 @@ async def process_blogger_style_callback(task_id: str, blogger_data: Dict[str, A
         
         # 更新任务状态为失败
         if task_id in async_tasks:
+            # 在处理回调时恢复原始的request_id
+            original_request_id = async_tasks[task_id].get("request_id")
+            if original_request_id:
+                set_request_id(original_request_id)
+                logger.info(f"Restored original request_id: {original_request_id} for task_id: {task_id}")
+            
             async_tasks[task_id]["status"] = "failed"
             async_tasks[task_id]["error"] = str(e)
             # 设置事件，唤醒等待的协程

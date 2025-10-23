@@ -101,10 +101,14 @@ async def health_check():
 @app.post("/callback/blogger_style/{task_id}")
 async def blogger_style_callback(task_id: str, request: Request):
     """处理达人风格分析的回调请求"""
+    # 导入request_context模块来获取当前request_id
+    from core.request_context import get_request_id
     try:
         # 获取回调数据
         callback_data = await request.json()
-        logger.info(f"Received callback for task_id: {task_id}, {callback_data}")
+        current_request_id = get_request_id()
+        logger.info(f"Received callback for task_id: {task_id}, current request_id: {current_request_id}")
+        logger.info(f"Callback data: {callback_data}")
         
         # 处理回调数据
         result = await process_blogger_style_callback(task_id, callback_data)
