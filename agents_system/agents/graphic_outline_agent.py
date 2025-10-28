@@ -1626,7 +1626,7 @@ class GraphicOutlineAgent(BaseAgent):
             requirements = processed_data.get("requirements", "")       # 创作要求
             
             # 构建提示词
-            prompt_template = self.prompts.get("graphic_outline", {}).get("creation_direction", {})
+            prompt_template = self.prompts.get("graphic_outline", {}).get("creation_direction_cp", {})
             
             # 构建输入描述
             input_description = prompt_template.get("input_description", "").format(
@@ -1652,7 +1652,7 @@ class GraphicOutlineAgent(BaseAgent):
 {skill_description}
 
 ## 输出内容及格式
-明确写出最终确定的创作方向，从日常种草、好物合集中进行选择。只需要从日常种草或好物合集中进行选择，也即输出4个字。
+明确写出最终确定的创作方向，从选购指南、单向测评、横向测评中进行选择，也即输出4个字。
 
 ## 限制:
 {chr(10).join('- ' + r for r in restrictions)}
@@ -1660,7 +1660,7 @@ class GraphicOutlineAgent(BaseAgent):
             
             # 调用模型确定创作方向
             result = await self.model_manager.call_model(
-                "creation_direction",
+                "creation_direction_cp",
                 system_prompt
             )
             
