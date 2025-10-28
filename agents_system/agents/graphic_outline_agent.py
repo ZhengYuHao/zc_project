@@ -431,6 +431,20 @@ class GraphicOutlineAgent(BaseAgent):
             # 匹配种草类内容（扩展匹配，同时保留原有"种|草|vlog"匹配）
             if re.search(planting_pattern, direction):
                 # 调用豆包大模型生成种草图文规划
+                # 确定创作方向
+                creation_direction = await self._determine_creation_direction(processed_data)
+                processed_data["creation_direction"] = creation_direction        
+                
+                if creation_direction=="日常种草" :
+                     # 生成日常种草模板
+                    planting_template = await self._generate_planting_template(processed_data)
+                    processed_data["planting_template"] = planting_template
+                    self.logger.info(f"Successfully generated planting template: {planting_template}")
+                    
+                elif creation_direction=="好物合集":
+                    self.logger.info(f"Determined creation direction: {creation_direction}")
+     
+               
                 
                 planting_content = await self._generate_planting_content(processed_data)
                 processed_data["planting_content"] = planting_content
@@ -442,10 +456,8 @@ class GraphicOutlineAgent(BaseAgent):
             
             # 匹配测评类内容（扩展匹配，同时保留原有"测|评|选购|指南"匹配）
             elif re.search(review_pattern, direction):
-                # 确定创作方向
-                creation_direction = await self._determine_creation_direction(processed_data)
-                processed_data["creation_direction"] = creation_direction
                 
+               
                 # 处理图文规划(测试)的工作
                 planting_content = await self._generate_planting_content_cp(processed_data)
                 processed_data["planting_content"] = planting_content
@@ -1430,6 +1442,72 @@ class GraphicOutlineAgent(BaseAgent):
             self.logger.error(f"Full traceback: {traceback.format_exc()}")
             return json.dumps({"content": "测评配文生成失败", "tags": ""}, ensure_ascii=False)
     
+    async def _generate_planting_template(self, processed_data: Dict[str, Any]) -> str:
+        """
+        创建日常种草的模板
+        
+        Args:
+            processed_data: 处理后的数据
+            
+        Returns:
+            生成的种草模板
+        """
+        try:
+            # 从processed_data中提取所需参数
+            sections = processed_data.get("sections", {})
+            
+            category = sections.get("product_category", "")      # 产品品类
+            style = sections.get("blogger_style", "")           # 达人风格
+            requirements = processed_data.get("requirements", "") # 创作要求
+            producthight = processed_data.get("ProductHighlights", "") # 卖点信息
+            notice = processed_data.get("notice", "")            # 注意事项
+            
+            # 构建提示词
+            prompt_template = self.prompts.get("graphic_outline", {}).get("planting_template", {})
+            
+            # 构建输入描述
+            input_description = prompt_template.get("input_description", "").format(
+                category=category,
+                style=style,
+                requirements=requirements,
+                producthight=producthight,
+                notice=notice
+            )
+            
+            # 构建技能描述
+            skills_description = prompt_template.get("skills", {})
+            
+            # 构建限制条件
+            restrictions = prompt_template.get("restrictions", [])
+            
+            system_prompt = f"""## 角色
+{prompt_template.get("role", "")}
+
+## 输入
+{input_description}
+
+## 技能
+{skills_description.get("skill_1", "")}
+{skills_description.get("skill_2", "")}
+{skills_description.get("skill_3", "")}
+
+## 限制:
+{chr(10).join('- ' + r for r in restrictions)}
+"""
+            
+            # 调用模型生成种草模板
+            result = await self.model_manager.call_model(
+                "planting_template",
+                system_prompt
+            )
+            
+            self.logger.info(f"Successfully generated planting template")
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Error generating planting template: {str(e)}")
+            raise Exception(f"生成种草模板失败: {str(e)}")
+
     async def _determine_creation_direction(self, processed_data: Dict[str, Any]) -> str:
         """
         确定细分的创作方向
@@ -1476,7 +1554,7 @@ class GraphicOutlineAgent(BaseAgent):
 {skill_description}
 
 ## 输出内容及格式
-明确写出最终确定的创作方向，从日常种草、好物合集中进行选择。
+明确写出最终确定的创作方向，从日常种草、好物合集中进行选择。只需要从日常种草或好物合集中进行选择，也即输出4个字。
 
 ## 限制:
 {chr(10).join('- ' + r for r in restrictions)}
@@ -1512,7 +1590,7 @@ class GraphicOutlineAgent(BaseAgent):
             ProductHighlights = processed_data.get("ProductHighlights", "")  # 使用新的字段名
             # 从sections中提取目标人群和卖点信息
             sections = processed_data.get("sections", {})
-            requirements = processed_data.get("requirements", "")  # 内츠方向建议
+            requirements = processed_data.get("requirements", "")  # 内茨方向建议
             notice = processed_data.get("notice", "")  # 注意事项
             picture_number = processed_data.get("picture_number", 6)  # 图片数量，默认为6
             outline_direction = processed_data.get("outline_direction", "")
