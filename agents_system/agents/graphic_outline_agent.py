@@ -1216,7 +1216,7 @@ class GraphicOutlineAgent(BaseAgent):
             notice = processed_data.get("notice", "")  # 注意事项
             picture_number = processed_data.get("picture_number", 6)  # 图片数量，默认为6
             outline_direction = processed_data.get("outline_direction", "")
-           
+            planting_template = processed_data.get("planting_template", "")  # 从processed_data中提取planting_template
             
             if isinstance(sections, dict):
                 
@@ -1259,6 +1259,8 @@ class GraphicOutlineAgent(BaseAgent):
 ## 全局要求
 {global_requirements}
 
+## 创作模板参考
+{planting_template} 
 ## 禁止话术
 {forbidden_phrases}
 
@@ -1664,7 +1666,7 @@ class GraphicOutlineAgent(BaseAgent):
             notice = processed_data.get("notice", "")  # 注意事项
             picture_number = processed_data.get("picture_number", 6)  # 图片数量，默认为6
             outline_direction = processed_data.get("outline_direction", "")
-           
+            planting_template = processed_data.get("planting_template", "")  # 从processed_data中提取planting_template
             
             if isinstance(sections, dict):
                 
@@ -1724,6 +1726,9 @@ class GraphicOutlineAgent(BaseAgent):
 
 ## 技能5：备注
 {skill_5}
+
+## 创作模板参考
+{planting_template} 
 
 ## 输出格式要求
 {output_format}
