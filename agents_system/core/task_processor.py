@@ -9,6 +9,7 @@ import asyncio
 import json
 import httpx
 import uuid
+import os
 from typing import Dict, Any, List, Callable, Optional
 from utils.logger import get_logger
 from config.model_config import load_model_config
@@ -40,6 +41,19 @@ class TaskProcessor:
     """任务处理器类"""
     def __init__(self):
         self.tasks = {}
+        # 加载提示词
+        self._load_prompts()
+    
+    def _load_prompts(self):
+        """加载提示词"""
+        prompts_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'prompts', 'prompts.json')
+        try:
+            with open(prompts_path, 'r', encoding='utf-8') as f:
+                self.prompts = json.load(f)
+        except Exception as e:
+            logger = get_logger("agent.task_processor")
+            logger.error(f"Failed to load prompts from {prompts_path}: {str(e)}")
+            self.prompts = {}
     
     def register_task(self, task_name: str, func: Callable):
         """注册任务"""
@@ -97,6 +111,68 @@ class TaskProcessor:
 
 # 全局任务处理器实例
 task_processor = TaskProcessor()
+
+
+async def extract_product_category(request_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    提取产品品类
+    
+    Args:
+        request_data: 请求数据
+        
+    Returns:
+        处理结果，包含产品品类信息
+    """
+    logger = get_logger("agent.task_processor")
+    
+    try:
+        # 获取请求数据
+        product_highlights = request_data.get('ProductHighlights', '')
+        
+        logger.info(f"Extracting product category with highlights: {product_highlights}")
+        
+        # 构建提示词
+        role = task_processor.prompts.get("product_category", {}).get("analyze_category", {}).get("role", "")
+        skills = task_processor.prompts.get("product_category", {}).get("analyze_category", {}).get("skills", {}).get("skill_1", "")
+        restrictions = task_processor.prompts.get("product_category", {}).get("analyze_category", {}).get("restrictions", [])
+        
+        # 构建完整的提示词
+        prompt = f"""{role}
+
+## 技能
+{skills}
+
+## 限制
+{chr(10).join('- ' + r for r in restrictions)}
+
+产品卖点：{product_highlights}
+"""
+        
+        # 使用模型管理器调用模型进行品类分析
+        model_manager = get_model_manager()
+        
+        # 调用模型进行品类分析
+        result = await model_manager.call_model("product_category", prompt)
+        
+        # 返回结果
+        response = {
+            "product_category": result
+        }
+        
+        logger.info(f"Extract product category result: {response}")
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error extracting product category: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        # 出现异常时返回默认值
+        default_response = {
+            "product_category": "未识别到品类"
+        }
+        logger.info(f"Returning default response: {default_response}")
+        return default_response
 
 
 async def extract_blogger_style(request_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -414,4 +490,12 @@ def get_task_status(task_id: str) -> Dict[str, Any]:
     if task_id in async_tasks:
         return async_tasks[task_id]
     else:
-        return {"status": "not_found", "message": "任务不存在"}
+        return {
+            "status": "not_found",
+            "message": "任务不存在"
+        }
+
+
+# 注册所有任务
+# task_processor.register_task("blogger_style_extractor", extract_blogger_style)  # 注册达人风格理解提取任务
+task_processor.register_task("product_category_extractor", extract_product_category)  # 注册产品品类提取任务

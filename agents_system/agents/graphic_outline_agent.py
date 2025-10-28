@@ -402,12 +402,8 @@ class GraphicOutlineAgent(BaseAgent):
         
         # 获取当前请求ID
         request_id = get_request_id()
-        
+
         try:
-            # 确保任务处理器中注册了达人风格分析任务
-            from core.task_processor import task_processor, extract_blogger_style
-            if "blogger_style_extractor" not in task_processor.tasks:
-                task_processor.register_task("blogger_style_extractor", extract_blogger_style)
             
             # 并发执行七个任务
             task_results = await task_processor.execute_tasks(request)
@@ -435,6 +431,7 @@ class GraphicOutlineAgent(BaseAgent):
             # 匹配种草类内容（扩展匹配，同时保留原有"种|草|vlog"匹配）
             if re.search(planting_pattern, direction):
                 # 调用豆包大模型生成种草图文规划
+                
                 planting_content = await self._generate_planting_content(processed_data)
                 processed_data["planting_content"] = planting_content
                 
@@ -445,6 +442,10 @@ class GraphicOutlineAgent(BaseAgent):
             
             # 匹配测评类内容（扩展匹配，同时保留原有"测|评|选购|指南"匹配）
             elif re.search(review_pattern, direction):
+                # 确定创作方向
+                creation_direction = await self._determine_creation_direction(processed_data)
+                processed_data["creation_direction"] = creation_direction
+                
                 # 处理图文规划(测试)的工作
                 planting_content = await self._generate_planting_content_cp(processed_data)
                 processed_data["planting_content"] = planting_content
@@ -1157,6 +1158,8 @@ class GraphicOutlineAgent(BaseAgent):
             
             #达人风格
             "blogger_style_extractor": "blogger_style",
+            #产品品类
+            "product_category_extractor": "product_category",
             #产品背书
             # "product_endorsement_extractor": "product_endorsement",
             #话题
@@ -1427,6 +1430,71 @@ class GraphicOutlineAgent(BaseAgent):
             self.logger.error(f"Full traceback: {traceback.format_exc()}")
             return json.dumps({"content": "测评配文生成失败", "tags": ""}, ensure_ascii=False)
     
+    async def _determine_creation_direction(self, processed_data: Dict[str, Any]) -> str:
+        """
+        确定细分的创作方向
+        
+        Args:
+            processed_data: 处理后的数据
+            
+        Returns:
+            确定的创作方向
+        """
+        try:
+            # 从processed_data中提取所需参数
+            sections = processed_data.get("sections", {})
+            
+            category = sections.get("product_category", "")  # 产品品类
+            style = sections.get("blogger_style", "")        # 达人风格
+            producthight = processed_data.get("ProductHighlights", "")  # 产品卖点
+            requirements = processed_data.get("requirements", "")       # 创作要求
+            
+            # 构建提示词
+            prompt_template = self.prompts.get("graphic_outline", {}).get("creation_direction", {})
+            
+            # 构建输入描述
+            input_description = prompt_template.get("input_description", "").format(
+                category=category,
+                style=style,
+                producthight=producthight,
+                requirements=requirements
+            )
+            
+            # 构建技能描述
+            skill_description = prompt_template.get("skills", {}).get("skill_1", "")
+            
+            # 构建限制条件
+            restrictions = prompt_template.get("restrictions", [])
+            
+            system_prompt = f"""## 角色
+{prompt_template.get("role", "")}
+
+## 输入
+{input_description}
+
+## 技能：创作方向确定
+{skill_description}
+
+## 输出内容及格式
+明确写出最终确定的创作方向，从日常种草、好物合集中进行选择。
+
+## 限制:
+{chr(10).join('- ' + r for r in restrictions)}
+"""
+            
+            # 调用模型确定创作方向
+            result = await self.model_manager.call_model(
+                "creation_direction",
+                system_prompt
+            )
+            
+            self.logger.info(f"Successfully determined creation direction: {result}")
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Error determining creation direction: {str(e)}")
+            raise Exception(f"确定创作方向失败: {str(e)}")
+
     async def _generate_planting_content(self, processed_data: Dict[str, Any], user_prompt: Optional[str] = None) -> str:
         """
         生成种草图文规划内容
