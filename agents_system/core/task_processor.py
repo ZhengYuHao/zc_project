@@ -497,5 +497,5 @@ def get_task_status(task_id: str) -> Dict[str, Any]:
 
 
 # 注册所有任务
-task_processor.register_task("blogger_style_extractor", extract_blogger_style)  # 注册达人风格理解提取任务
+#task_processor.register_task("blogger_style_extractor", extract_blogger_style)  # 注册达人风格理解提取任务
 task_processor.register_task("product_category_extractor", extract_product_category)  # 注册产品品类提取任务

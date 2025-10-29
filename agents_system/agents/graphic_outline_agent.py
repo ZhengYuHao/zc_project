@@ -481,7 +481,7 @@ class GraphicOutlineAgent(BaseAgent):
                     # 生成横向测评模板
                     planting_template = await self._generate_collection_template_hxcs(processed_data)
                     processed_data["planting_template"] = planting_template
-                    self.logger.info(f"Successfully generated _generate_collection_template_hxcs template: {planting_template}")
+                    self.logger.info(f"C {planting_template}")
 
                 # 处理图文规划(测评)的工作
                 planting_content = await self._generate_planting_content_cp(processed_data)
@@ -1384,54 +1384,70 @@ class GraphicOutlineAgent(BaseAgent):
                 
                 blogger_style = sections.get("blogger_style", "")
             
-            # 构建系统提示词
-            prompt_template = self.prompts.get("graphic_outline", {}).get("planting_captions_cp", {})
-            
-            # 构建输入描述
-            input_description = prompt_template.get("input_description", "").format(
-                outline_direction=outline_direction,
-                ProductHighlights=ProductHighlights,
-                planting_content=planting_content,
-                notice=notice,
-                requirements=requirements,
-                planting_template= planting_template
-                
-            )
-            
-            # 构建全局要求
-            global_requirements = prompt_template.get("global_requirements", "")
-            
-            # 构建技能描述
-            skill_1 = prompt_template.get("skills", {}).get("skill_1", "")
-            
-            # 构建输出格式
-            output_format = prompt_template.get("output_format", "")
-            
-            # 构建限制
-            restrictions = "\n".join(prompt_template.get("restrictions", []))
-            
-            system_prompt = f"""## 角色
-{prompt_template.get("role", "")}
+            # 直接在代码中定义提示词
+            system_prompt = f"""# 角色
+你是一位专业且富有创意的小红书与抖音笔记配文创作者，尤其擅长图文大纲工作流。能够精准根据输入的各类信息，创作出高质量、吸引人的笔记配文。
 
 ## 输入
-{input_description}
-
-## 全局要求
-{global_requirements}
+【注意事项】：{notice}
+【卖点信息】：{ProductHighlights}
+【达人风格】：{blogger_style}
+【创作要求】：{requirements}
+【创作模板】：{planting_template}
+【图片规划】：{planting_content}
 
 ## 技能
-{skill_1}
+### 技能 1：深度理解创作模板
+仔细研读【创作模板】，不仅要把握其核心逻辑，还能在此基础上进行合理的发散创作，使配文既遵循模板又具有独特性。
 
-## 创作模板参考
-{planting_template} 
+### 技能 2：遵循创作要求
+创作的配文一定要充分考虑实拍性，且符合大众常理。例如，根据【达人风格】判断该博主家里是否有屁模，若没有，配文中不能出现屁模相关内容。
 
-## 强制输出格式要求
-{output_format}
+### 技能 3：创作配文
+1. 理解与融合
+    - 配文模板作为重要写作逻辑参考，当配文模板的部分内容与创作方向的部分内容存在冲突时，以创作方向为准，非冲突内容必须全部保留并执行。
+    - 深入理解【达人风格】中的表达风格、配文写作逻辑以及内容调性，将其融入配文创作中。
+    - 精准识别【注意事项】中与配文创作有关的要求。若与创作方向出现冲突，以注意事项中的要求为准，非冲突内容必须全部保留并执行。
+2. 创作配文
+【创作配文原则】
+    - 依据上一步得到的创作逻辑进行配文创作。
+    - 自然且巧妙地将卖点融合进配文中。
+    - 所创作的配文必须符合【达人风格】中的达人人设。
+    - 配文需要与【图片规划】的场景、人物精准对应。
+【卖点融合原则】
+    - 全面理解【卖点信息】的卖点部分，明确主要卖点必须优先提及，且先于次要卖点。对于次要卖点，需根据创作方向选择契合的进行提及。
+    - 卖点表述要自然流畅，符合【达人风格】中的表达风格，避免生硬表述。
+    - 严禁堆砌卖点，不得连续或机械地罗列多个卖点，要按照【达人风格】中的表达风格巧妙融合卖点。
+    - 禁止为了强行融合卖点而虚构夸张的痛点场景。
+    - 杜绝负面拉踩或对比竞争品牌的表述。
+
+**配文结构**：标题、正文。
+
+## 强制输出格式和内容
+**笔记配文**
+- **标题**：生成 5 个极具创意且吸引力的标题，巧妙融入 emoji 表情，提升趣味性和点击率，标题字数严格控制在 20 字以内。
+- **正文**：严格依照指定的创作结构撰写，正文内容需基于真实数据和专业分析，风格自然可信。避免使用镜头语言和剧本式表述。不含价格信息或门店推荐（除非【注意事项】提及）。适当巧妙融入少量 emoji 表情，字数与【达人风格】中的配文字数相近。
+- **标签**：输出【卖点信息】中要求的必带话题，同时输出 3 - 4 个符合规范的标签，包含主话题、精准话题、流量话题。
+
+Please严格按照以下JSON format output配文内容 and tags， don't contain any extra的文本 or explanation， don't add any说明文字， only output JSON：
+
+{{
+  "captions": {{
+    "titles": ["标题1", "标题2", "标题3", "标题4", "标题5"],
+    "content": "完整的正文内容",
+    "ending": "收尾内容"
+  }},
+  "tags": ["标签1", "标签2", "标签3", "标签4"]
+}}
+
+Ensure output的JSON format completely correct， don't contain any code block标记（如```json```）， don't add any额外说明， don't in JSON末尾 add any文字。Please use response_format={{"type": "json_object"}}确保 output为严格的JSON格式。
 
 ## 限制
-{restrictions}
+- 仅输出标题、正文、标签相关内容，严禁输出其他无关信息。
+- 严禁开头没有过渡/痛点植入直接种草产品。
+- 输出内容不包含任何格式标记（如###、**、== 等）
 """
-            
+
             # 使用用户提示词或系统提示词
             prompt = user_prompt if user_prompt else system_prompt
             
@@ -2076,69 +2092,75 @@ class GraphicOutlineAgent(BaseAgent):
                 
                 blogger_style = sections.get("blogger_style", "")
             
-            # 构建系统提示词
-            prompt_template = self.prompts.get("graphic_outline", {}).get("planting_content_cp", {})
-            
-            # 构建输入描述
-            input_description = prompt_template.get("input_description", "").format(
-                notice=notice,
-                outline_direction=outline_direction,
-                ProductHighlights=ProductHighlights,
-                blogger_style=blogger_style,
-                product_name=product_name,
-                picture_number=picture_number,
-                requirements=requirements,
-                planting_template= planting_template
-            )
-            
-            # 构建必备技能
-            required_skills = prompt_template.get("required_skills", "")
-            
-            # 构建技能描述
-            skill_1 = prompt_template.get("skills", {}).get("skill_1", "")
-            skill_2 = prompt_template.get("skills", {}).get("skill_2", "")
-            skill_3 = prompt_template.get("skills", {}).get("skill_3", "")
-            
-            # 构建输出格式
-            output_format_template = prompt_template.get("output_format", "")
-            # 手动替换占位符以避免KeyError
-            output_format = output_format_template.replace('{picture_number}', str(picture_number)).replace('{content_direction}', '')
-            
-            # 构建限制
-            restrictions = "\n".join(prompt_template.get("restrictions", []))
-            
+            # 直接在代码中定义提示词
             system_prompt = f"""## 角色
-{prompt_template.get("role", "")}
+你是一位专业的小红书图文规划架构师，在生成适用于小红书的测评类图文规划大纲方面经验丰富、能力卓越。
 
 ## 输入
-{input_description}
-
-## 产品相关信息
-【 产品名称】：{product_name}
+【产品品类】：{product_name}
 【卖点信息】：{ProductHighlights}
+【注意事项】：{notice}
+【达人风格】：{blogger_style}
+【创作要求】：{requirements}
+【图片数量】：{picture_number}
+【创作模板】：{planting_template}
 
-## 必备技能
-{required_skills}
 
 ## 技能
-### 技能1：
-{skill_1}
+### 技能 1: 深度理解创作模板
+仔细剖析给定的【创作模板】，在忠实于核心要求的基础上，结合输入的产品品类、卖点信息等要素，进行合理的模板发散与创新，使创作更贴合实际需求。
 
-### 技能2：规划图文结构
-{skill_2}
+### 技能 2: 进行创作
+依据对创作模板的理解以及输入的各项信息，包括【产品品类】、【卖点信息】、【注意事项】、【达人风格】、【创作要求】、【图片数量】设定以及【创作模板】等，生成完整且高质量的小红书测评类图文规划大纲。
 
-### 技能3：生成图片规划
-{skill_3}
+## 输出内容及格式
+Please strictly adhere to the following JSON format output, do not include any additional text or explanation, do not add any explanatory text, only output JSON:
 
-## 创作模板参考
-{planting_template} 
+{{
+  "content_direction": "根据技能2提取的创作方向",
+  "images": [
+    {{
+      "image_number": 1,
+      "image_type": "图片类型（从封面图、场景图、产品图、人物图、特写图、效果图中选择）",
+      "planning": "图片规划和花字的内容",
+      "remark": "拍摄注意事项"
+    }},
+    {{
+      "image_number": 2,
+      "image_type": "图片类型",
+      "planning": "图片规划和花字的内容",
+      "remark": "拍摄注意事项"
+    }}
+  ]
+}}
 
-## 输出格式要求
-{output_format}
+Please generate{picture_number}P images' planning content. Ensure output's JSON format is completely correct, do not contain any code block```, do not add any additional explanation, do not in JSON末尾 add any text.
+
+===示例===
+{{
+  "content_direction": "本文将以三款智能手表为例，通过横向对比的方式，帮助大家选择最适合自己的智能手表。",
+  "images": [
+    {{
+      "image_number": 1,
+      "image_type": "参数拉表型",
+      "planning": "下方三款产品硬件参数横向对比表格（例如品牌、重量、续航、屏幕尺寸、支持功能等字段）；上方花字：\"三款智能手表核心参数对比\"",
+      "remark": "表格清晰可读，四周留白平衡排版"
+    }},
+    {{
+      "image_number": 2,
+      "image_type": "对比测评图（排版型）",
+      "planning": "大标题：智能手表怎么选？段落小标题：选购要点1，健康监测功能全不全？对很多用户来说，智能手表最核心的功能就是\"健康管理\"。尤其是心率、血氧和睡眠监测，能及时反映身体状态，避免过度疲劳或潜在风险。三款产品的功能对比：A牌：支持心率、血氧、压力监测；B牌：全面支持心率、血氧、ECG、体温等四项监测；C牌：仅支持基础心率 + 睡眠追踪。结论：健康维度上，B牌表现最为全面，适合中老年人群或有健康需求的人士；若仅日常使用，A牌也已满足基础健康管理；C牌偏基础型，更适合预算有限用户。",
+      "remark": "保持文字可读性，重点词用强调色标识"
+    }}
+  ]
+}}
+===示例结束===
 
 ## 限制
-{restrictions}
-"""
+- 严格遵守【注意事项】中的内容。
+- 不涉及话题内容。
+- 严禁对比时拉踩对方。
+- 创作需紧密围绕输入信息进行，不得随意添加无根据的内容 。"""
 
             # 使用用户提示词或系统提示词
             prompt = user_prompt if user_prompt else system_prompt
