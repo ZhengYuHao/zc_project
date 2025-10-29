@@ -1209,6 +1209,33 @@ class GraphicOutlineAgent(BaseAgent):
         self.logger.info(f"Successfully aggregated and processed task results{processed_outline}")
         return processed_outline
 
+    
+    def _extract_tags_from_content(self, content: str) -> Dict[str, str]:
+        """
+        从内容中提取标签部分
+        
+        Args:
+            content: 包含标签的完整内容
+            
+        Returns:
+            包含content和tags字段的字典
+        """
+        # 提取标签内容
+        tags_pattern = r"- \*\*标签\*\*：(.*)"
+        tags_match = re.search(tags_pattern, content)
+        tags_content = ""
+        
+        if tags_match:
+            tags_content = tags_match.group(1).strip()
+            # 从原内容中移除标签行
+            content = re.sub(tags_pattern, "", content).strip()
+        
+        # 构造返回结果，包含内容和标签
+        return {
+            "content": content,
+            "tags": tags_content
+        }
+    
     async def _generate_captions(self, processed_data: Dict[str, Any], planting_content: str, user_prompt: Optional[str] = None) -> str:
         """
         生成种草图文的配文内容
@@ -1237,60 +1264,71 @@ class GraphicOutlineAgent(BaseAgent):
                 
                 blogger_style = sections.get("blogger_style", "")
             
-            # 构建系统提示词
-            prompt_template = self.prompts.get("graphic_outline", {}).get("planting_captions", {})
-            
-            # 构建输入描述
-            input_description = prompt_template.get("input_description", "").format(
-                notice=notice,
-                outline_direction=outline_direction,
-                ProductHighlights=ProductHighlights,
-                blogger_style=blogger_style,
-                planting_content=planting_content,
-                requirements=requirements
-            )
-            
-            # 构建技能1描述
-            skill_1 = prompt_template.get("skills", {}).get("skill_1", "")
-            
-            # 构建全局要求
-            global_requirements = prompt_template.get("global_requirements", "")
-            
-            # 构建禁止用语
-            forbidden_phrases = prompt_template.get("forbidden_phrases", "")
-            
-            # 构建输出格式和内容
-            output_format_and_content = prompt_template.get("output_format_and_content", "")
-            
-            # 构建限制
-            restrictions = prompt_template.get("restrictions", "")
-            
+            # 构建系统提示词 - 使用硬编码的提示词
             system_prompt = f"""## 角色
-{prompt_template.get("role", "")}
+你是一位专业且富有创意的小红书与抖音笔记配文创作者，尤其擅长图文大纲工作流。能够精准根据输入的各类信息，创作出高质量、吸引人的笔记配文。
 
 ## 输入
-{input_description}
+【注意事项】：{notice}
+【卖点信息】：{ProductHighlights}
+【达人风格】：{blogger_style}
+【创作要求】：{requirements}
+【创作模板】：{planting_template}
 
-## 全局要求
-{global_requirements}
+【图文规划】：{planting_content}
 
-## 创作模板参考
-{planting_template} 
+## 技能
+### 技能 1：深度理解创作模板
+仔细研读【创作模板】，不仅要把握其核心逻辑，还能在此基础上进行合理的发散创作，使配文既遵循模板又具有独特性。
 
-## 禁止话术
-{forbidden_phrases}
+### 技能 2：遵循创作要求
+创作的配文一定要充分考虑实拍性，且符合大众常理。例如，根据【达人风格】判断该博主家里是否有屁模，若没有，配文中不能出现屁模相关内容。
 
-### 技能
-## 技能1
-{skill_1}
+### 技能 3：创作配文
+1. 理解与融合
+    - 配文模板作为重要写作逻辑参考，当配文模板的部分内容与创作方向的部分内容存在冲突时，以创作方向为准，非冲突内容必须全部保留并执行。
+    - 深入理解【达人风格】中的表达风格、配文写作逻辑以及内容调性，将其融入配文创作中。
+    - 精准识别【注意事项】中与配文创作有关的要求。若与创作方向出现冲突，以注意事项中的要求为准，非冲突内容必须全部保留并执行。
+2. 创作配文
+【创作配文原则】
+    - 依据上一步得到的创作逻辑进行配文创作。
+    - 自然且巧妙地将卖点融合进配文中。
+    - 所创作的配文必须符合【达人风格】中的达人人设。
+    - 配文需要与【图片规划】的场景、人物精准对应。
+【卖点融合原则】
+    - 全面理解【卖点信息】的卖点部分，明确主要卖点必须优先提及，且先于次要卖点。对于次要卖点，需根据创作方向选择契合的进行提及。
+    - 卖点表述要自然流畅，符合【达人风格】中的表达风格，避免生硬表述。
+    - 严禁堆砌卖点，不得连续或机械地罗列多个卖点，要按照【达人风格】中的表达风格巧妙融合卖点。
+    - 禁止为了强行融合卖点而虚构夸张的痛点场景。
+    - 杜绝负面拉踩或对比竞争品牌的表述。
+
+**配文结构**：标题、正文。
 
 ## 强制输出格式和内容
-{output_format_and_content}
+**笔记配文**
+- **标题**：生成 5 个极具创意且吸引力的标题，巧妙融入 emoji 表情，提升趣味性和点击率，标题字数严格控制在 20 字以内。
+- **正文**：严格依照指定的创作结构撰写，正文内容需基于真实数据和专业分析，风格自然可信。避免使用镜头语言和剧本式表述。不含价格信息或门店推荐（除非【注意事项】提及）。适当巧妙融入少量 emoji 表情，字数与【达人风格】中的配文字数相近。
+- **标签**：输出【卖点信息】中要求的必带话题，同时输出 3 - 4 个符合规范的标签，包含主话题、精准话题、流量话题。
+
+Please严格按照以下JSON format output配文内容 and tags， don't contain any extra的文本 or explanation， don't add any说明文字， only output JSON：
+
+{{
+  "captions": {{
+    "titles": ["标题1", "标题2", "标题3", "标题4", "标题5"],
+    "content": "完整的正文内容",
+    "ending": "收尾内容"
+  }},
+  "tags": ["标签1", "标签2", "标签3", "标签4"]
+}}
+
+Ensure output的JSON format completely correct， don't contain any code block标记（如```json```）， don't add any额外说明， don't in JSON末尾 add any文字。Please use response_format={{"type": "json_object"}}确保 output为严格的JSON格式。
+
 
 ## 限制
-{restrictions}
-"""
-            
+- 仅输出标题、正文、标签相关内容，严禁输出其他无关信息。
+- 严禁开头没有过渡/痛点植入直接种草产品。
+- 输出内容不包含任何格式标记（如###、**、== 等）"""
+
             # 使用用户提示词或系统提示词
             prompt = user_prompt if user_prompt else system_prompt
             
@@ -1319,7 +1357,6 @@ class GraphicOutlineAgent(BaseAgent):
             except json.JSONDecodeError as je:
                 self.logger.warning(f"[_generate_planting_captions] Failed to parse model response as JSON: {je}")
             
-        
             return captions_content
             
         except Exception as e:
@@ -1327,33 +1364,7 @@ class GraphicOutlineAgent(BaseAgent):
             # 添加堆栈跟踪信息
             import traceback
             self.logger.error(f"Full traceback: {traceback.format_exc()}")
-            return json.dumps({"content": "种草配文生成失败", "tags": ""}, ensure_ascii=False)
-    
-    def _extract_tags_from_content(self, content: str) -> Dict[str, str]:
-        """
-        从内容中提取标签部分
-        
-        Args:
-            content: 包含标签的完整内容
-            
-        Returns:
-            包含content和tags字段的字典
-        """
-        # 提取标签内容
-        tags_pattern = r"- \*\*标签\*\*：(.*)"
-        tags_match = re.search(tags_pattern, content)
-        tags_content = ""
-        
-        if tags_match:
-            tags_content = tags_match.group(1).strip()
-            # 从原内容中移除标签行
-            content = re.sub(tags_pattern, "", content).strip()
-        
-        # 构造返回结果，包含内容和标签
-        return {
-            "content": content,
-            "tags": tags_content
-        }
+            return json.dumps({"content": "测评配文生成失败", "tags": ""}, ensure_ascii=False)
     
     async def _generate_planting_captions_cp(self, processed_data: Dict[str, Any], planting_content: str, user_prompt: Optional[str] = None) -> str:
         """
