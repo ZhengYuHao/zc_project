@@ -470,20 +470,20 @@ class GraphicOutlineAgent(BaseAgent):
                     processed_data["planting_template"] = planting_template
                     self.logger.info(f"Successfully generated _generate_planting_template_xgzn template: {planting_template}")
                     
-                elif creation_direction=="单品测试":
+                elif creation_direction=="单品测评":
                     self.logger.info(f"Determined creation direction: {creation_direction}")
-                    # 生成单品测试模板
+                    # 生成单品测评模板
                     planting_template = await self._generate_collection_template_dpcs(processed_data)
                     processed_data["planting_template"] = planting_template
                     self.logger.info(f"Successfully generated _generate_collection_template_dpcs template: {planting_template}")
-                elif creation_direction=="横向测试":
+                elif creation_direction=="横向测评":
                     self.logger.info(f"Determined creation direction: {creation_direction}")
-                    # 生成横向测试模板
+                    # 生成横向测评模板
                     planting_template = await self._generate_collection_template_hxcs(processed_data)
                     processed_data["planting_template"] = planting_template
                     self.logger.info(f"Successfully generated _generate_collection_template_hxcs template: {planting_template}")
-                    
-                # 处理图文规划(测试)的工作
+
+                # 处理图文规划(测评)的工作
                 planting_content = await self._generate_planting_content_cp(processed_data)
                 processed_data["planting_content"] = planting_content
                
@@ -902,7 +902,7 @@ class GraphicOutlineAgent(BaseAgent):
             if planting_data:
                 row = 12  # 起始行
                 # 每次处理两个数据项
-                for i in range(0, len(planting_data), 2):
+                for i in range(0, len(planting_data), 1):
                     # 处理第一个数据项（放在左侧A,B,C列）
                     if i < len(planting_data):
                         data_item = planting_data[i]
@@ -910,12 +910,6 @@ class GraphicOutlineAgent(BaseAgent):
                         cell_data[f"B{row}"] = data_item.get('planning', '')
                         cell_data[f"C{row}"] = data_item.get('remark', '')
                     
-                    # 处理第二个数据项（放在右侧D,E,F列）
-                    if i + 1 < len(planting_data):
-                        data_item = planting_data[i + 1]
-                        cell_data[f"D{row}"] = data_item.get('image_type', '')
-                        cell_data[f"E{row}"] = data_item.get('planning', '')
-                        cell_data[f"F{row}"] = data_item.get('remark', '')
                     
                     row += 1
             
@@ -1399,7 +1393,9 @@ class GraphicOutlineAgent(BaseAgent):
                 ProductHighlights=ProductHighlights,
                 planting_content=planting_content,
                 notice=notice,
-                requirements=requirements
+                requirements=requirements,
+                planting_template= planting_template
+                
             )
             
             # 构建全局要求
@@ -1843,7 +1839,7 @@ class GraphicOutlineAgent(BaseAgent):
 {skill_description}
 
 ## 输出内容及格式
-明确写出最终确定的创作方向，从选购指南、单向测评、横向测评中进行选择，也即输出4个字。
+明确写出最终确定的创作方向，从选购指南、单品测评、横向测评中进行选择，也即输出4个字。
 
 ## 限制:
 {chr(10).join('- ' + r for r in restrictions)}
@@ -2091,7 +2087,8 @@ class GraphicOutlineAgent(BaseAgent):
                 blogger_style=blogger_style,
                 product_name=product_name,
                 picture_number=picture_number,
-                requirements=requirements
+                requirements=requirements,
+                planting_template= planting_template
             )
             
             # 构建必备技能
