@@ -454,7 +454,7 @@ class GraphicOutlineAgent(BaseAgent):
                 processed_data["planting_content"] = planting_content
                 
                 # 生成种草配文
-                planting_captions = await self._generate_planting_captions(processed_data, planting_content)
+                planting_captions = await self._generate_captions(processed_data, planting_content)
                 processed_data["planting_captions"] = planting_captions
                 
             
@@ -1209,7 +1209,7 @@ class GraphicOutlineAgent(BaseAgent):
         self.logger.info(f"Successfully aggregated and processed task results{processed_outline}")
         return processed_outline
 
-    async def _generate_planting_captions(self, processed_data: Dict[str, Any], planting_content: str, user_prompt: Optional[str] = None) -> str:
+    async def _generate_captions(self, processed_data: Dict[str, Any], planting_content: str, user_prompt: Optional[str] = None) -> str:
         """
         生成种草图文的配文内容
         
@@ -1394,7 +1394,8 @@ class GraphicOutlineAgent(BaseAgent):
 【达人风格】：{blogger_style}
 【创作要求】：{requirements}
 【创作模板】：{planting_template}
-【图片规划】：{planting_content}
+
+【图文规划】：{planting_content}
 
 ## 技能
 ### 技能 1：深度理解创作模板
@@ -1445,8 +1446,7 @@ Ensure output的JSON format completely correct， don't contain any code block�
 ## 限制
 - 仅输出标题、正文、标签相关内容，严禁输出其他无关信息。
 - 严禁开头没有过渡/痛点植入直接种草产品。
-- 输出内容不包含任何格式标记（如###、**、== 等）
-"""
+- 输出内容不包含任何格式标记（如###、**、== 等）"""
 
             # 使用用户提示词或系统提示词
             prompt = user_prompt if user_prompt else system_prompt
@@ -1980,55 +1980,90 @@ Ensure output的JSON format completely correct， don't contain any code block�
                 product_name=product_name
             )
             
-            # 构建技能描述
-            skill_1 = prompt_template.get("skills", {}).get("skill_1", "")
-            skill_2 = prompt_template.get("skills", {}).get("skill_2", "")
-            skill_3 = prompt_template.get("skills", {}).get("skill_3", "")
-            skill_4 = prompt_template.get("skills", {}).get("skill_4", "")
-            skill_5 = prompt_template.get("skills", {}).get("skill_5", "")
+            # 获取相关信息
+            product_name = processed_data.get("product_name", "")
+            ProductHighlights = processed_data.get("ProductHighlights", "")  # 使用新的字段名
+            # 从sections中提取目标人群和卖点信息
+            sections = processed_data.get("sections", {})
+            requirements = processed_data.get("requirements", "")  # 内茨方向建议
+            notice = processed_data.get("notice", "")  # 注意事项
+            picture_number = processed_data.get("picture_number", 6)  # 图片数量，默认为6
+            outline_direction = processed_data.get("outline_direction", "")
+            planting_template = processed_data.get("planting_template", "")  # 从processed_data中提取planting_template
             
-            # 构建输出格式
-            output_format_template = prompt_template.get("output_format", "")
-            # 手动替换占位符以避免KeyError
-            output_format = output_format_template.replace('{picture_number}', str(picture_number)).replace('{content_direction}', '')
+            if isinstance(sections, dict):
+                
+                blogger_style = sections.get("blogger_style", "")
+                
             
-            # 构建限制
-            restrictions = "\n".join(prompt_template.get("restrictions", []))
-            
+            # 直接在代码中定义提示词
             system_prompt = f"""## 角色
-{prompt_template.get("role", "")}
+你是一位专业的小红书图文规划架构师，在生成适用于小红书的测评类图文规划大纲方面经验丰富、能力卓越。
 
 ## 输入
-{input_description}
+【产品品类】：{product_name}
+【卖点信息】：{ProductHighlights}
+【注意事项】：{notice}
+【达人风格】：{blogger_style}
+【创作要求】：{requirements}
+【图片数量】：{picture_number}
+【创作模板】：{planting_template}
 
-## 产品相关信息
-- 产品名称：{product_name}
+## 技能
+### 技能 1: 深度理解创作模板
+仔细剖析给定的【创作模板】，在忠实于核心要求的基础上，结合输入的产品品类、卖点信息等要素，进行合理的模板发散与创新，使创作更贴合实际需求。
 
-### 技能
-## 技能1：
-{skill_1}
+### 技能 2: 进行创作
+依据对创作模板的理解以及输入的各项信息，包括【产品品类】、【卖点信息】、【注意事项】、【达人风格】、【创作要求】、【图片数量】设定以及【创作模板】等，生成完整且高质量的小红书测评类图文规划大纲。
 
-## 技能2：
-{skill_2}
+## 输出内容及格式
+请严格按照以下JSON格式 output，不要包含任何额外的文本或解释，不要添加任何说明文字，只输出JSON：
 
-## 技能3：生成图片规划内容
-{skill_3}
+{{
+  "content_direction": "根据技能2提取的创作方向",
+  "images": [
+    {{
+      "image_number": 1,
+      "image_type": "图片类型（从封面图、场景图、产品图、人物图、特写图、效果图中选择）",
+      "planning": "图片规划和花字的内容",
+      "remark": "拍摄注意事项"
+    }},
+    {{
+      "image_number": 2,
+      "image_type": "图片类型",
+      "planning": "图片规划和花字的内容",
+      "remark": "拍摄注意事项"
+    }}
+  ]
+}}
 
-## 技能4：生成图片的花字内容
-{skill_4}
+Please generate{picture_number}张图片的 planning content。Ensure output的JSON格式完全 correct，不要 contain any code block标记（如```json```）， don't add any额外说明， don't in JSON末尾 add any文字。
 
-## 技能5：备注
-{skill_5}
-
-## 创作模板参考
-{planting_template} 
-
-## 输出格式要求
-{output_format}
+===示例===
+{{
+  "content_direction": "本文将以三款智能手表为例，通过横向对比的方式，帮助大家选择最适合自己的智能手表。",
+  "images": [
+    {{
+      "image_number": 1,
+      "image_type": "参数拉表型",
+      "planning": "下方三款产品硬件参数横向对比表格（例如品牌、重量、续航、屏幕尺寸、支持功能等字段）；上方花字：\"三款智能手表核心参数对比\"",
+      "remark": "表格清晰可读，四周留白平衡排版"
+    }},
+    {{
+      "image_number": 2,
+      "image_type": "对比测评图（排版型）",
+      "planning": "大标题：智能手表怎么选？段落小标题：选购要点1，健康监测功能全不全？对很多用户来说，智能手表最核心的功能就是\"健康管理\"。尤其是心率、血氧和睡眠监测，能及时反映身体状态，避免过度疲劳或潜在风险。三款产品的功能对比：A牌：支持心率、血氧、压力监测；B牌：全面支持心率、血氧、ECG、体温等四项监测；C牌：仅支持基础心率 + 睡眠追踪。结论：健康维度上，B牌表现最为全面，适合中老年人群或有健康需求的人士；若仅日常使用，A牌也已满足基础健康管理；C牌偏基础型，更适合预算有限用户。",
+      "remark": "保持文字可读性，重点词用强调色标识"
+    }}
+  ]
+}}
+===示例结束===
 
 ## 限制
-{restrictions}
-"""
+- 严格遵守【注意事项】中的内容。
+- 不涉及话题内容。
+- 严禁对比时拉踩对方。
+- 创作需紧密围绕输入信息进行，不得随意添加无根据的内容 。"""
 
             # 使用用户提示词或系统提示词
             prompt = user_prompt if user_prompt else system_prompt
