@@ -1736,71 +1736,73 @@ class GraphicOutlineAgent(BaseAgent):
         except Exception as e:
             self.logger.error(f"Error generating planting template: {str(e)}")
             raise Exception(f"生成种草模板失败: {str(e)}")
+        
     async def _generate_planting_template_xgzn(self, processed_data: Dict[str, Any]) -> str:
-            """
-            创建日常种草的模板
+        """
+        创建日常种草的模板
+        
+        Args:
+            processed_data: 处理后的数据
             
-            Args:
-                processed_data: 处理后的数据
-                
-            Returns:
-                生成的种草模板
-            """
-            try:
-                # 从processed_data中提取所需参数
-                sections = processed_data.get("sections", {})
-                
-                category = sections.get("product_category", "")      # 产品品类
-                style = sections.get("blogger_style", "")           # 达人风格
-                requirements = processed_data.get("requirements", "") # 创作要求
-                producthight = processed_data.get("ProductHighlights", "") # 卖点信息
-                notice = processed_data.get("notice", "")            # 注意事项
-                
-                # 构建提示词
-                prompt_template = self.prompts.get("graphic_outline", {}).get("planting_template", {})
-                
-                # 构建输入描述
-                input_description = prompt_template.get("input_description", "").format(
-                    category=category,
-                    style=style,
-                    requirements=requirements,
-                    producthight=producthight,
-                    notice=notice
-                )
-                
-                # 构建技能描述
-                skills_description = prompt_template.get("skills", {})
-                
-                # 构建限制条件
-                restrictions = prompt_template.get("restrictions", [])
-                
-                system_prompt = f"""## 角色
-    {prompt_template.get("role", "")}
+        Returns:
+            生成的种草模板
+        """
+        try:
+            # 从processed_data中提取所需参数
+            sections = processed_data.get("sections", {})
+            
+            category = sections.get("product_category", "")      # 产品品类
+            style = sections.get("blogger_style", "")           # 达人风格
+            requirements = processed_data.get("requirements", "") # 创作要求
+            producthight = processed_data.get("ProductHighlights", "") # 卖点信息
+            notice = processed_data.get("notice", "")            # 注意事项
+            
+            # 构建提示词
+            prompt_template = self.prompts.get("graphic_outline", {}).get("planting_template_xgzn", {})
+            
+            # 构建输入描述
+            input_description = prompt_template.get("input_description", "").format(
+                category=category,
+                style=style,
+                requirements=requirements,
+                producthight=producthight,
+                notice=notice
+            )
+            
+            # 构建技能描述
+            skills_description = prompt_template.get("skills", {})
+            
+            # 构建限制条件
+            restrictions = prompt_template.get("restrictions", [])
+            
+            system_prompt = f"""## 角色
+{prompt_template.get("role", "")}
 
-    ## 输入
-    {input_description}
+## 输入
+{input_description}
 
-    ## 技能
-    {skills_description.get("skill_1", "")}
-    {skills_description.get("skill_2", "")}
-    {skills_description.get("skill_3", "")}
+## 技能
+{skills_description.get("skill_1", "")}
+{skills_description.get("skill_2", "")}
+{skills_description.get("skill_3", "")}
 
-    ## 限制:
-    {chr(10).join('- ' + r for r in restrictions)}
-    """
-                
-                # 调用模型生成种草模板
-                result = await self.model_manager.call_model(
-                    "planting_template",
-                    system_prompt
-                )
-                
-                self.logger.info(f"Successfully generated planting template")
-                return result
-                
-            except Exception as e:
-                self.logger.error(f"Error generating planting template: {str(e)}")
-                raise Exception(f"生成种草模板失败: {str(e)}")
+## 限制:
+{chr(10).join('- ' + r for r in restrictions)}
+"""
+            
+            # 调用模型生成种草模板
+            result = await self.model_manager.call_model(
+                "planting_template_xgzn",
+                system_prompt
+            )
+            
+            self.logger.info(f"Successfully generated planting template")
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Error generating planting template: {str(e)}")
+            raise Exception(f"生成种草模板失败: {str(e)}")
+    
     async def _determine_creation_direction_cp(self, processed_data: Dict[str, Any]) -> str:
         """
         确定细分的创作方向
