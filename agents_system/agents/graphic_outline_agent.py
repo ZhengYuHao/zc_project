@@ -1962,57 +1962,25 @@ Ensure output的JSON format completely correct， don't contain any code block�
         """
         try:
             # 获取相关信息
-            product_name = processed_data.get("product_name", "")
             ProductHighlights = processed_data.get("ProductHighlights", "")  # 使用新的字段名
             # 从sections中提取目标人群和卖点信息
             sections = processed_data.get("sections", {})
             requirements = processed_data.get("requirements", "")  # 内茨方向建议
             notice = processed_data.get("notice", "")  # 注意事项
             picture_number = processed_data.get("picture_number", 6)  # 图片数量，默认为6
-            outline_direction = processed_data.get("outline_direction", "")
             planting_template = processed_data.get("planting_template", "")  # 从processed_data中提取planting_template
-            
+            category = sections.get("product_category", "")
             if isinstance(sections, dict):
                 
                 blogger_style = sections.get("blogger_style", "")
-                
-            
-            # 构建系统提示词
-            prompt_template = self.prompts.get("graphic_outline", {}).get("planting_content", {})
-            
-            # 构建输入描述
-            input_description = prompt_template.get("input_description", "").format(
-                outline_direction=outline_direction,
-                ProductHighlights=ProductHighlights,
-                notice=notice,
-                picture_number=picture_number,
-                blogger_style=blogger_style,
-                requirements=requirements,
-                product_name=product_name
-            )
-            
-            # 获取相关信息
-            product_name = processed_data.get("product_name", "")
-            ProductHighlights = processed_data.get("ProductHighlights", "")  # 使用新的字段名
-            # 从sections中提取目标人群和卖点信息
-            sections = processed_data.get("sections", {})
-            requirements = processed_data.get("requirements", "")  # 内茨方向建议
-            notice = processed_data.get("notice", "")  # 注意事项
-            picture_number = processed_data.get("picture_number", 6)  # 图片数量，默认为6
-            outline_direction = processed_data.get("outline_direction", "")
-            planting_template = processed_data.get("planting_template", "")  # 从processed_data中提取planting_template
-            
-            if isinstance(sections, dict):
-                
-                blogger_style = sections.get("blogger_style", "")
-                
-            
+
+
             # 直接在代码中定义提示词
             system_prompt = f"""## 角色
 你是一位专业的小红书图文规划架构师，在生成适用于小红书的测评类图文规划大纲方面经验丰富、能力卓越。
 
 ## 输入
-【产品品类】：{product_name}
+【产品品类】：{category}
 【卖点信息】：{ProductHighlights}
 【注意事项】：{notice}
 【达人风格】：{blogger_style}
@@ -2133,7 +2101,7 @@ Please generate{picture_number}张图片的 planning content。Ensure output的J
             picture_number = processed_data.get("picture_number", 6)  # 图片数量，默认为6
             outline_direction = processed_data.get("outline_direction", "")
             planting_template = processed_data.get("planting_template", "")  # 从processed_data中提取planting_template
-            
+            category = sections.get("product_category", "")
             if isinstance(sections, dict):
                 
                 blogger_style = sections.get("blogger_style", "")
@@ -2143,7 +2111,7 @@ Please generate{picture_number}张图片的 planning content。Ensure output的J
 你是一位专业的小红书图文规划架构师，在生成适用于小红书的测评类图文规划大纲方面经验丰富、能力卓越。
 
 ## 输入
-【产品品类】：{product_name}
+【产品品类】：{category}
 【卖点信息】：{ProductHighlights}
 【注意事项】：{notice}
 【达人风格】：{blogger_style}
